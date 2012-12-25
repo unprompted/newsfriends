@@ -5,7 +5,7 @@ from sqlite3 import dbapi2 as sqlite
 import cgi
 from openid.consumer import consumer
 from openid.store.sqlstore import SQLiteStore
-from openid.extensions import pape, sreg
+#from openid.extensions import pape, sreg
 from openid.cryptutil import randomString
 import cgitb; cgitb.enable()
 from Cookie import SimpleCookie
@@ -102,8 +102,8 @@ class Application(object):
 		openidUrl = form.getvalue('openid_identifier')
 		oid = request.consumer()
 		oidRequest = oid.begin(openidUrl)
-		oidRequest.addExtension(pape.Request([pape.AUTH_PHISHING_RESISTANT]))
-		oidRequest.addExtension(sreg.SRegRequest(required=['nickname'], optional=['fullname', 'email']))
+		#oidRequest.addExtension(pape.Request([pape.AUTH_PHISHING_RESISTANT]))
+		#oidRequest.addExtension(sreg.SRegRequest(required=['nickname'], optional=['fullname', 'email']))
 		trustUrl = request.indexUrl()
 		returnTo = os.path.join(request.indexUrl(), 'process')
 		if oidRequest.shouldSendRedirect():
@@ -134,8 +134,8 @@ class Application(object):
 			request.session['oid'] = info.getDisplayIdentifier()
 			if info.endpoint.canonicalID:
 				request.session['oid'] = info.endpoint.canonicalID
-			request.session['pape'] = pape.Response.fromSuccessResponse(info)
-			request.session['sreg'] = sreg.SRegResponse.fromSuccessResponse(info)
+			#request.session['pape'] = pape.Response.fromSuccessResponse(info)
+			#request.session['sreg'] = sreg.SRegResponse.fromSuccessResponse(info)
 			return self.redirect(request, request.environment['SCRIPT_NAME'])
 		elif info.status == consumer.CANCEL:
 			raise RuntimeError('Verification canceled.')
