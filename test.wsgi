@@ -11,17 +11,31 @@ import cgitb; cgitb.enable()
 from Cookie import SimpleCookie
 from genshi.template import TemplateLoader
 import cPickle
+import mimetypes
 
 databaseFilename = '/home/cory/src/idtest/data/db.sqlite'
 
-class Application(object):
-	SESSION_COOKIE_NAME = 'sessionId'
+class Request(object):
+	SESSION_COOKIE_NAME = 'sessionId' 
 
-	def __init__(self):
-		self._store = None
+	def __init__(self, environment, startResponse):
+		self.environment = environment
+		self.startResponse = startResponse
+
+		self._sessionId = None
 		self._db = None
-		self._data = {}
-		self._loader = TemplateLoader(os.path.join(os.getcwd(), os.path.dirname(__file__), 'templates'), auto_reload=True)
+		self._store = None
+		self.session = {}
+		self.data = {}
+		self.session['id'] = self.sessionId()
+
+	def indexUrl(self):
+		return '%s://%s%s%s' % (
+			self.environment['wsgi.url_scheme'],
+			self.environment['HTTP_HOST'],
+			(':' + self.environment['SERVER_PORT']) if self.environment['SERVER_PORT'] != '80' else '',
+			self.environment['SCRIPT_NAME']
+		)
 
 	def sessionId(self):
 		if not self._sessionId:
@@ -71,113 +85,140 @@ class Application(object):
 	def consumer(self):
 		return consumer.Consumer(self.session, self.store())
 
-	def indexUrl(self, environment):
-		return '%s://%s%s%s' % (environment['wsgi.url_scheme'], environment['HTTP_HOST'], (':' + environment['SERVER_PORT']) if environment['SERVER_PORT'] != '80' else '', environment['SCRIPT_NAME'])
+
+class Application(object):
+	def __init__(self):
+		self._loader = TemplateLoader(os.path.join(os.getcwd(), os.path.dirname(__file__), 'templates'), auto_reload=True)
 
 	# index
-	def handle_(self, environment, startResponse):
-		return self.render('index.html')
+	def handle_(self, request):
+		return self.render(request, 'index.html')
 
-	def handle_env(self, environment, startResponse):
-		return self.render('index.html')
+	def handle_env(self, request):
+		return self.render(request, 'index.html')
 
-	def handle_verify(self, environment, startResponse):
-		form = cgi.FieldStorage(fp=environment['wsgi.input'], environ=environment)
-		openidUrl = form.getvalue('openid')
-		oid = self.consumer()
-		request = oid.begin(openidUrl)
-		request.addExtension(pape.Request([pape.AUTH_PHISHING_RESISTANT]))
-		request.addExtension(sreg.SRegRequest(required=['nickname'], optional=['fullname', 'email']))
-		trustUrl = self.indexUrl(environment)
-		returnTo = os.path.join(self.indexUrl(environment), 'process')
-		if request.shouldSendRedirect():
-			redirectUrl = request.redirectURL(trustUrl, returnTo, immediate=False)
-			return self.redirect(redirectUrl)
+	def handle_verify(self, request):
+		form = cgi.FieldStorage(fp=request.environment['wsgi.input'], environ=request.environment)
+		openidUrl = form.getvalue('openid_identifier')
+		oid = request.consumer()
+		oidRequest = oid.begin(openidUrl)
+		oidRequest.addExtension(pape.Request([pape.AUTH_PHISHING_RESISTANT]))
+		oidRequest.addExtension(sreg.SRegRequest(required=['nickname'], optional=['fullname', 'email']))
+		trustUrl = request.indexUrl()
+		returnTo = os.path.join(request.indexUrl(), 'process')
+		if oidRequest.shouldSendRedirect():
+			redirectUrl = oidRequest.redirectURL(trustUrl, returnTo, immediate=False)
+			return self.redirect(request, redirectUrl)
 		else:
-			result = request.htmlMarkup(trustUrl, returnTo, form_tag_attrs={'id': 'openid_message'}, immediate=False)
-			startResponse('200 OK', [
+			result = oidRequest.htmlMarkup(trustUrl, returnTo, form_tag_attrs={'id': 'openid_message'}, immediate=False)
+			request.startResponse('200 OK', [
 				('Content-Type', 'text/html'),
 				('Content-Length', str(len(result))),
-				('Set-Cookie', '%s=%s;' % (self.SESSION_COOKIE_NAME, self.sessionId()))
+				('Set-Cookie', '%s=%s;' % (request.SESSION_COOKIE_NAME, request.sessionId()))
 			])
-			self.saveSession()
+			request.saveSession()
 			return [result]
 
-	def handle_process(self, environment, startResponse):
-		form = cgi.FieldStorage(fp=environment['wsgi.input'], environ=environment)
+	def handle_process(self, request):
+		form = cgi.FieldStorage(fp=request.environment['wsgi.input'], environ=request.environment)
 		fields = {}
 		for key in form:
 			fields[key] = form.getvalue(key)
-		oid = self.consumer()
-		trustUrl = self.indexUrl(environment)
+		oid = request.consumer()
+		trustUrl = request.indexUrl()
 		info = oid.complete(fields, os.path.join(trustUrl, 'process'))
 
 		if info.status == consumer.FAILURE and info.getDisplayIdentifier():
 			raise RuntimeError('Verification of %s failed: %s' % (cgi.escape(info.getDisplayIdentifier()), info.message))
 		elif info.status == consumer.SUCCESS:
-			self.session['oid'] = info.getDisplayIdentifier()
+			request.session['oid'] = info.getDisplayIdentifier()
 			if info.endpoint.canonicalID:
-				self.session['oid'] = info.endpoint.canonicalID
-			self.session['pape'] = pape.Response.fromSuccessResponse(info)
-			self.session['sreg'] = sreg.SRegResponse.fromSuccessResponse(info)
-			return self.redirect(self.environment['SCRIPT_NAME'])
+				request.session['oid'] = info.endpoint.canonicalID
+			request.session['pape'] = pape.Response.fromSuccessResponse(info)
+			request.session['sreg'] = sreg.SRegResponse.fromSuccessResponse(info)
+			return self.redirect(request, request.environment['SCRIPT_NAME'])
 		elif info.status == consumer.CANCEL:
 			raise RuntimeError('Verification canceled.')
 		else:
 			raise RuntimeError('Verification failed: ' + info.message)
 
-	def handle_logout(self, environment, startResponse):
+	def handle_logout(self, request):
 		try:
-			del self.session['oid']
+			del request.session['oid']
 		except:
 			pass
-		return self.redirect(self.environment['SCRIPT_NAME'])
+		return self.redirect(request, request.environment['SCRIPT_NAME'])
 
-	def handleError(self, environment, startResponse):
-		return self.render('index.html')
+	def handle_static(self, request):
+		here = os.path.abspath(os.path.normpath(os.path.join(os.getcwd(), os.path.dirname(__file__))))
 
-	def redirect(self, url):
+		# remove "/static"
+		parts = request.environment['PATH_INFO'].lstrip('/').split('/', 1)
+		if parts[0] == 'static':
+			parts = parts[1:]
+		relativePath = os.path.join(*parts)
+		absolutePath = os.path.abspath(os.path.normpath(os.path.join(here, 'htdocs', relativePath)))
+		if not absolutePath.startswith(here):
+			raise RuntimeError('Path outside of static resources: %s, %s' % (absolutePath, here))
+
+		staticFile = open(absolutePath, 'rb') 
+		size = os.stat(absolutePath).st_size
+
+		mimeType, encoding = mimetypes.guess_type(absolutePath)
+		if not mimeType:
+			mimeType = 'application/binary'
+
+		request.startResponse('200 OK', [
+			('Content-Length', str(size)),
+			('Content-Type', mimeType),
+		])
+
+		blockSize = 4096
+		if 'wsgi.file_wrapper' in request.environment:
+			return request.environment['wsgi.file_wrapper'](staticFile, blockSize)
+		else:
+			return iter(lambda: staticFile.read(blockSize), '')
+
+	def handleError(self, request):
+		return self.render(request, 'index.html')
+
+	def redirect(self, request, url):
 		response = ''
-		self.startResponse('302 Found', [
+		request.startResponse('302 Found', [
 			('Location', url),
 			('Content-Length', str(len(response))),
-			('Set-Cookie', '%s=%s;' % (self.SESSION_COOKIE_NAME, self.sessionId()))
+			('Set-Cookie', '%s=%s;' % (request.SESSION_COOKIE_NAME, request.sessionId()))
 		])
-		self.saveSession()
+		request.saveSession()
 		return [response]
 
-	def render(self, template, response='200 OK'):
-		self._data['session'] = self.session
-		self._data['environment'] = self.environment
-		self.saveSession()
-		stream = self._loader.load(template).generate(**self._data)
+	def render(self, request, template, response='200 OK'):
+		request.data['session'] = request.session
+		request.data['environment'] = request.environment
+		request.saveSession()
+		stream = self._loader.load(template).generate(**request.data)
 		result = stream.render('html', doctype='html')
-		self.startResponse(response, [
+		request.startResponse(response, [
 			('Content-Type', 'text/html'),
 			('Content-Length', str(len(result))),
-			('Set-Cookie', '%s=%s;' % (self.SESSION_COOKIE_NAME, self.sessionId()))
+			('Set-Cookie', '%s=%s;' % (request.SESSION_COOKIE_NAME, request.sessionId()))
 		])
 		return [result]
 
 	def handler(self, environment, startResponse):
-		self.environment = environment
-		self.startResponse = startResponse
-		self._sessionId = None
-		self._db = None
-		self._store = None
-		self.session = {}
-		self._data = {}
-		self.session['id'] = self.sessionId()
-		path = environment['PATH_INFO'].lstrip('/')
+		request = Request(environment, startResponse)
+
+		action = environment['PATH_INFO'].lstrip('/').split('/', 1)[0]
 		try:
-			method = getattr(self, 'handle_' + path)
-		except:
-			raise RuntimeError('Method for %s was not found.' % environment['PATH_INFO'])
-		try:
-			return method(environment, startResponse)
+			try:
+				method = getattr(self, 'handle_' + action)
+			except:
+				raise RuntimeError('Method for %s was not found.' % environment['PATH_INFO'])
+			return method(request)
 		except Exception, e:
-			self._data['error'] = str(e)
-			return self.handleError(environment, startResponse)
+			import traceback
+			request.data['error'] = traceback.format_exc()
+			return self.handleError(request)
 
 app = Application()
 application = app.handler
