@@ -224,11 +224,12 @@ app = Application()
 application = app.handler
 
 if __name__ == '__main__':
-	cursor = app.db().cursor()
+	request = Request({}, None)
+	cursor = request.db().cursor()
 	cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session TEXT, name TEXT, value BLOB, UNIQUE (session, name))')
 	try:
-		app.store().createTables()
+		request.store().createTables()
 	except:
 		pass
-	app.store().cleanup()
-	app.db().commit()
+	request.store().cleanup()
+	request.db().commit()
