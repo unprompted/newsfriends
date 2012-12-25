@@ -1,0 +1,37 @@
+<html
+	xmlns="http://www.w3.org/1999/xhtml"
+	xmlns:py="http://genshi.edgewall.org/">
+	<?python from genshi.core import Markup ?>
+	<head>
+		<title>Template!</title>
+	</head>
+	<body>
+		<h1>Template!</h1>
+		<div style="background: #f88; border: 4px solid #f00; padding: 1em" py:if="defined('error')">${error}</div>
+		<div py:if="not 'oid' in session">
+			<h2>Log in</h2>
+			<form method="POST" action="${environment.SCRIPT_NAME}/verify">
+				<input name="openid" type="text" value="https://www.google.com/accounts/o8/id"></input>
+				<input type="submit"></input>
+			</form>
+		</div>
+		<div py:if="'oid' in session">
+			<h2>Welcome, ${session.oid}</h2>
+			<a href="${environment.SCRIPT_NAME}/logout">Log out</a>
+		</div>
+		<div py:if="defined('response')">
+			<h2>Response</h2>
+			<pre>${response}</pre>
+		</div>
+		<h2 py:if="session">Session</h2>
+		<ul>
+			<li py:for="k, v in session.items()"><b>${k}</b>: ${v}</li>
+		</ul>
+		<div py:if="defined('environment')">
+			<h2>Environment</h2>
+			<ul>
+				<li py:for="k, v in environment.items()"><b>${k}</b>: ${v}</li>
+			</ul>
+		</div>
+	</body>
+</html>

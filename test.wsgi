@@ -9,6 +9,8 @@ from openid.extensions import pape, sreg
 from openid.cryptutil import randomString
 import cgitb; cgitb.enable()
 from Cookie import SimpleCookie
+from genshi.template import TemplateLoader
+import cPickle
 
 databaseFilename = '/home/cory/src/idtest/data/db.sqlite'
 
@@ -18,6 +20,8 @@ class Application(object):
 	def __init__(self):
 		self._store = None
 		self._db = None
+		self._data = {}
+		self._loader = TemplateLoader(os.path.join(os.getcwd(), os.path.dirname(__file__), 'templates'), auto_reload=True)
 
 	def sessionId(self):
 		if not self._sessionId:
@@ -40,20 +44,24 @@ class Application(object):
 
 	def loadSession(self):
 		cursor = self.db().cursor()
-		cursor.execute('SELECT name, value FROM sessions WHERE id=?', (self.sessionId(),))
+		cursor.execute('SELECT name, value FROM sessions WHERE session=?', (self.sessionId(),))
 		for name, value in cursor:
-			self.session[name] = value
+			self.session[name] = cPickle.loads(str(value))
 		cursor.close()
 
 	def saveSession(self):
 		cursor = self.db().cursor()
 		for name, value in self.session.items():
+			blob = sqlite.Binary(cPickle.dumps(value))
 			try:
-				cursor.execute('INSERT INTO sessions (id, name, value) VALUES (?, ?, ?)', (self.sessionId(), name, value))
-			except:
-				cursor.execute('UPDATE sessions SET value=? WHERE id=? AND name=?', (value, self.sessionId(), name))
-		cursor.close()
+				cursor.execute('INSERT INTO sessions (session, name, value) VALUES (?, ?, ?)', (self.sessionId(), name, blob))
+			except Exception, e:
+				cursor.execute('UPDATE sessions SET value=? WHERE session=? AND name=?', (blob, self.sessionId(), name))
+				if cursor.rowcount == 0:
+					raise RuntimeError('Could not save session variable %s=%s: %s' % (name, value, str(e)))
+		cursor.execute('DELETE FROM sessions WHERE session=? AND NOT name IN (%s)' % (', '.join('?' for key in self.session)), [self.sessionId()] + self.session.keys())
 		self.db().commit()
+		cursor.close()
 
 	def store(self):
 		if not self._store:
@@ -68,24 +76,10 @@ class Application(object):
 
 	# index
 	def handle_(self, environment, startResponse):
-		result = '''
-		<html><body><form method="POST" action="%s"><input name="openid" type="text" value="https://www.google.com/accounts/o8/id"></input><input type="submit"></input></form><div>session=%s</div></body></html>
-		''' % (os.path.join(self.indexUrl(environment), 'verify'), self.sessionId())
-		startResponse('200 OK', [
-			('Content-Type', 'text/html'),
-			('Content-Length', str(len(result))),
-			('Set-Cookie', '%s=%s;' % (self.SESSION_COOKIE_NAME, self.sessionId()))
-		])
-		return [result]
+		return self.render('index.html')
 
 	def handle_env(self, environment, startResponse):
-		result = str(environment)
-		startResponse('404 File not found', [
-			('Content-Type', 'text/plain'),
-			('Content-Length', str(len(result))),
-			('Set-Cookie', '%s=%s;' % (self.SESSION_COOKIE_NAME, self.sessionId()))
-		])
-		return [result]
+		return self.render('index.html')
 
 	def handle_verify(self, environment, startResponse):
 		form = cgi.FieldStorage(fp=environment['wsgi.input'], environ=environment)
@@ -98,20 +92,16 @@ class Application(object):
 		returnTo = os.path.join(self.indexUrl(environment), 'process')
 		if request.shouldSendRedirect():
 			redirectUrl = request.redirectURL(trustUrl, returnTo, immediate=False)
-			response = ''
-			startResponse('302 Found', [
-				('Location', redirectUrl),
-				('Content-Length', str(len(response))),
-				('Set-Cookie', '%s=%s;' % (self.SESSION_COOKIE_NAME, self.sessionId()))
-			])
-			return [response]
+			return self.redirect(redirectUrl)
 		else:
-			response = request.htmlMarkup(trustUrl, returnTo, form_tag_attrs={'id': 'openid_message'}, immediate=False)
+			result = request.htmlMarkup(trustUrl, returnTo, form_tag_attrs={'id': 'openid_message'}, immediate=False)
 			startResponse('200 OK', [
-				('Content-Length', str(len(response))),
+				('Content-Type', 'text/html'),
+				('Content-Length', str(len(result))),
 				('Set-Cookie', '%s=%s;' % (self.SESSION_COOKIE_NAME, self.sessionId()))
 			])
-			return [response]
+			self.saveSession()
+			return [result]
 
 	def handle_process(self, environment, startResponse):
 		form = cgi.FieldStorage(fp=environment['wsgi.input'], environ=environment)
@@ -122,66 +112,79 @@ class Application(object):
 		trustUrl = self.indexUrl(environment)
 		info = oid.complete(fields, os.path.join(trustUrl, 'process'))
 
-		result = str(info)
-
 		if info.status == consumer.FAILURE and info.getDisplayIdentifier():
-			result += '\nVerification of %s failed: %s' % (cgi.escape(info.getDisplayIdentifier()), info.message)
+			raise RuntimeError('Verification of %s failed: %s' % (cgi.escape(info.getDisplayIdentifier()), info.message))
 		elif info.status == consumer.SUCCESS:
-			result += '\nWelcome, %s.' % (cgi.escape(info.getDisplayIdentifier()),)
 			self.session['oid'] = info.getDisplayIdentifier()
 			if info.endpoint.canonicalID:
-				message += '\nCanonical: %s' % (cgi.escape(info.endpoint.canonicalID),)
 				self.session['oid'] = info.endpoint.canonicalID
-			papeInfo = pape.Response.fromSuccessResponse(info)
-			result += '\n' + str(papeInfo)
-			sregInfo = sreg.SRegResponse.fromSuccessResponse(info)
-			result += '\n' + str(sregInfo)
+			self.session['pape'] = pape.Response.fromSuccessResponse(info)
+			self.session['sreg'] = sreg.SRegResponse.fromSuccessResponse(info)
+			return self.redirect(self.environment['SCRIPT_NAME'])
 		elif info.status == consumer.CANCEL:
-			result = 'Verification canceled.'
+			raise RuntimeError('Verification canceled.')
 		else:
-			result = 'Verficiation failed:', info.message
+			raise RuntimeError('Verification failed: ' + info.message)
 
-		startResponse('200 OK', [
-			('Content-Type', 'text/plain'),
+	def handle_logout(self, environment, startResponse):
+		try:
+			del self.session['oid']
+		except:
+			pass
+		return self.redirect(self.environment['SCRIPT_NAME'])
+
+	def handleError(self, environment, startResponse):
+		return self.render('index.html')
+
+	def redirect(self, url):
+		response = ''
+		self.startResponse('302 Found', [
+			('Location', url),
+			('Content-Length', str(len(response))),
+			('Set-Cookie', '%s=%s;' % (self.SESSION_COOKIE_NAME, self.sessionId()))
+		])
+		self.saveSession()
+		return [response]
+
+	def render(self, template, response='200 OK'):
+		self._data['session'] = self.session
+		self._data['environment'] = self.environment
+		self.saveSession()
+		stream = self._loader.load(template).generate(**self._data)
+		result = stream.render('html', doctype='html')
+		self.startResponse(response, [
+			('Content-Type', 'text/html'),
 			('Content-Length', str(len(result))),
 			('Set-Cookie', '%s=%s;' % (self.SESSION_COOKIE_NAME, self.sessionId()))
 		])
 		return [result]
-
-	def handle404(self, environment, startResponse):
-		form = cgi.FieldStorage(fp=environment['wsgi.input'], environ=environment)
-		result = 'Method for %s was not found.' % environment['PATH_INFO']
-		startResponse('404 File not found', [
-			('Content-Type', 'text/plain'),
-			('Content-Length', str(len(result))),
-		])
-		return [result]
-
-	def saveSessionWhenDone(self, result):
-		for r in result:
-			yield r
-		self.saveSession()
 
 	def handler(self, environment, startResponse):
 		self.environment = environment
 		self.startResponse = startResponse
 		self._sessionId = None
 		self._db = None
+		self._store = None
 		self.session = {}
+		self._data = {}
 		self.session['id'] = self.sessionId()
 		path = environment['PATH_INFO'].lstrip('/')
 		try:
 			method = getattr(self, 'handle_' + path)
 		except:
-			method = self.handle404
-		return self.saveSessionWhenDone(method(environment, startResponse))
+			raise RuntimeError('Method for %s was not found.' % environment['PATH_INFO'])
+		try:
+			return method(environment, startResponse)
+		except Exception, e:
+			self._data['error'] = str(e)
+			return self.handleError(environment, startResponse)
 
 app = Application()
 application = app.handler
 
 if __name__ == '__main__':
 	cursor = app.db().cursor()
-	cursor.execute('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, name TEXT, value TEXT, UNIQUE (id, name))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session TEXT, name TEXT, value BLOB, UNIQUE (session, name))')
 	try:
 		app.store().createTables()
 	except:
