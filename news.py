@@ -13,7 +13,7 @@ from genshi.template import TemplateLoader
 import cPickle
 import mimetypes
 
-databaseFilename = '/home/cory/src/idtest/data/db.sqlite'
+databaseFilename = os.path.join(os.getcwd(), os.path.dirname(__file__), 'data', 'db.sqlite')
 
 class Request(object):
 	SESSION_COOKIE_NAME = 'sessionId' 
@@ -77,6 +77,24 @@ class Request(object):
 		self.db().commit()
 		cursor.close()
 
+	def loginUser(self):
+		cursor = self.db().cursor()
+		cursor.execute('SELECT user FROM identities WHERE identity=?', (self.session['oid'],))
+		row = cursor.fetchone()
+		if row:
+			cursor.execute('SELECT secret, username FROM users WHERE id=?', (row[0],))
+			secret, username = cursor.fetchone()
+			self.session['secret'] = secret
+			self.session['username'] = username
+		else:
+			self.session['secret'] = randomString(16, '0123456789ABCDEF')
+			self.session['username'] = None
+			cursor.execute('INSERT INTO users (secret) VALUES (?)', (self.session['secret'],))
+			user = cursor.lastrowid
+			cursor.execute('INSERT INTO identities (user, identity) VALUES (?, ?)', (user, self.session['oid']))
+			self.db().commit()
+		cursor.close()
+
 	def store(self):
 		if not self._store:
 			self._store = SQLiteStore(self.db())
@@ -134,6 +152,7 @@ class Application(object):
 			request.session['oid'] = info.getDisplayIdentifier()
 			if info.endpoint.canonicalID:
 				request.session['oid'] = info.endpoint.canonicalID
+			request.loginUser()
 			#request.session['pape'] = pape.Response.fromSuccessResponse(info)
 			#request.session['sreg'] = sreg.SRegResponse.fromSuccessResponse(info)
 			return self.redirect(request, request.environment['SCRIPT_NAME'])
@@ -143,10 +162,11 @@ class Application(object):
 			raise RuntimeError('Verification failed: ' + info.message)
 
 	def handle_logout(self, request):
-		try:
-			del request.session['oid']
-		except:
-			pass
+		for key in ('oid', 'username', 'secret'):
+			try:
+				del request.session[key]
+			except:
+				pass
 		return self.redirect(request, request.environment['SCRIPT_NAME'])
 
 	def handle_static(self, request):
@@ -227,6 +247,8 @@ if __name__ == '__main__':
 	request = Request({}, None)
 	cursor = request.db().cursor()
 	cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session TEXT, name TEXT, value BLOB, UNIQUE (session, name))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, secret TEXT, username TEXT)')
+	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity TEXT, UNIQUE(user, identity))')
 	try:
 		request.store().createTables()
 	except:
