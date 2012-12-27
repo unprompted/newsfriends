@@ -5,15 +5,19 @@ from sqlite3 import dbapi2 as sqlite
 import cgi
 from openid.consumer import consumer
 from openid.store.sqlstore import SQLiteStore
-#from openid.extensions import pape, sreg
 from openid.cryptutil import randomString
 import cgitb; cgitb.enable()
 from Cookie import SimpleCookie
 from genshi.template import TemplateLoader
 import cPickle
 import mimetypes
+import simplejson
 
 databaseFilename = os.path.join(os.getcwd(), os.path.dirname(__file__), 'data', 'db.sqlite')
+
+def json(method):
+	method.contentType = 'application/json'
+	return method
 
 class Request(object):
 	SESSION_COOKIE_NAME = 'sessionId' 
@@ -25,6 +29,7 @@ class Request(object):
 		self._sessionId = None
 		self._db = None
 		self._store = None
+		self._form = None
 		self.session = {}
 		self.data = {}
 		self.session['id'] = self.sessionId()
@@ -84,14 +89,15 @@ class Request(object):
 		if row:
 			cursor.execute('SELECT secret, username FROM users WHERE id=?', (row[0],))
 			secret, username = cursor.fetchone()
+			self.session['userId'] = row[0]
 			self.session['secret'] = secret
 			self.session['username'] = username
 		else:
 			self.session['secret'] = randomString(16, '0123456789ABCDEF')
 			self.session['username'] = None
 			cursor.execute('INSERT INTO users (secret) VALUES (?)', (self.session['secret'],))
-			user = cursor.lastrowid
-			cursor.execute('INSERT INTO identities (user, identity) VALUES (?, ?)', (user, self.session['oid']))
+			self.session['userId'] = cursor.lastrowid
+			cursor.execute('INSERT INTO identities (user, identity) VALUES (?, ?)', (self.session['userId'], self.session['oid']))
 			self.db().commit()
 		cursor.close()
 
@@ -102,6 +108,11 @@ class Request(object):
 
 	def consumer(self):
 		return consumer.Consumer(self.session, self.store())
+
+	def form(self):
+		if not self._form:
+			self._form = cgi.FieldStorage(fp=self.environment['wsgi.input'], environ=self.environment)
+		return self._form
 
 
 class Application(object):
@@ -120,8 +131,6 @@ class Application(object):
 		openidUrl = form.getvalue('openid_identifier')
 		oid = request.consumer()
 		oidRequest = oid.begin(openidUrl)
-		#oidRequest.addExtension(pape.Request([pape.AUTH_PHISHING_RESISTANT]))
-		#oidRequest.addExtension(sreg.SRegRequest(required=['nickname'], optional=['fullname', 'email']))
 		trustUrl = request.indexUrl()
 		returnTo = os.path.join(request.indexUrl(), 'process')
 		if oidRequest.shouldSendRedirect():
@@ -153,8 +162,6 @@ class Application(object):
 			if info.endpoint.canonicalID:
 				request.session['oid'] = info.endpoint.canonicalID
 			request.loginUser()
-			#request.session['pape'] = pape.Response.fromSuccessResponse(info)
-			#request.session['sreg'] = sreg.SRegResponse.fromSuccessResponse(info)
 			return self.redirect(request, request.environment['SCRIPT_NAME'])
 		elif info.status == consumer.CANCEL:
 			raise RuntimeError('Verification canceled.')
@@ -199,6 +206,33 @@ class Application(object):
 		else:
 			return iter(lambda: staticFile.read(blockSize), '')
 
+	@json
+	def handle_addSubscription(self, request):
+		form = request.form()
+		feedUrl = form.getvalue('feedUrl')
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		if not feedUrl:
+			raise RuntimeError('Missing feed URL.')
+		result = {}
+		cursor = request.db().cursor()
+		cursor.execute('INSERT INTO subscriptions (user, url) VALUES (?, ?)', (request.session['userId'], feedUrl))
+		result['affectedRows'] = cursor.rowcount
+		cursor.close()
+		request.db().commit()
+		return self.json(request, result)
+
+	@json
+	def handle_getSubscriptions(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		cursor = request.db().cursor()
+		cursor.execute('SELECT user, name, url, parent FROM subscriptions WHERE user=? ORDER BY name DESC, url DESC', (request.session['userId'],))
+		result = {'subscriptions': []}
+		for row in cursor:
+			result['subscriptions'].append({'user': row[0], 'name': row[1], 'feedUrl': row[2], 'parent': row[3]})
+		return self.json(request, result)
+
 	def handleError(self, request):
 		return self.render(request, 'index.html')
 
@@ -225,10 +259,22 @@ class Application(object):
 		])
 		return [result]
 
+	def json(self, request, data):
+		request.data['session'] = request.session
+		request.data['environment'] = request.environment
+		request.saveSession()
+		result = simplejson.dumps(data)
+		request.startResponse('200 OK', [
+			('Content-Type', 'application/json'),
+			('Content-Length', str(len(result))),
+		])
+		return [result]
+
 	def handler(self, environment, startResponse):
 		request = Request(environment, startResponse)
 
 		action = environment['PATH_INFO'].lstrip('/').split('/', 1)[0]
+		method = None
 		try:
 			try:
 				method = getattr(self, 'handle_' + action)
@@ -236,9 +282,17 @@ class Application(object):
 				raise RuntimeError('Method for %s was not found.' % environment['PATH_INFO'])
 			return method(request)
 		except Exception, e:
-			import traceback
-			request.data['error'] = traceback.format_exc()
-			return self.handleError(request)
+			if hasattr(method, 'contentType'):
+				contentType = method.contentType
+			else:
+				contentType = 'text/html'
+			if contentType == 'application/json':
+				import traceback
+				return self.json(request, {'error': str(e), 'traceback': traceback.format_exc()})
+			else:
+				import traceback
+				request.data['error'] = traceback.format_exc()
+				return self.handleError(request)
 
 app = Application()
 application = app.handler
@@ -249,6 +303,7 @@ if __name__ == '__main__':
 	cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session TEXT, name TEXT, value BLOB, UNIQUE (session, name))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, secret TEXT, username TEXT)')
 	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity TEXT, UNIQUE(user, identity))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user INTEGER, name TEXT, url TEXT, parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
 	try:
 		request.store().createTables()
 	except:
