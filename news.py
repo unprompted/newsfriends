@@ -12,12 +12,51 @@ from genshi.template import TemplateLoader
 import cPickle
 import mimetypes
 import simplejson
+import urllib2
+import datetime
 
 databaseFilename = os.path.join(os.getcwd(), os.path.dirname(__file__), 'data', 'db.sqlite')
 
 def json(method):
 	method.contentType = 'application/json'
 	return method
+
+class FeedCache(object):
+	def __init__(self, db):
+		self._db = db
+
+	def get(self, url):
+		document = None
+		cursor = self._db.cursor()
+		cursor.execute('SELECT document FROM feeds WHERE url=?', (url,))
+		row = cursor.fetchone()
+		if row:
+			document = row[0]
+		cursor.close()
+		return document
+
+	def fetch(self, url):
+		cursor = self._db.cursor()
+		lastAttempt = None
+		lastUpdate = None
+		error = None
+		document = None
+		cursor.execute('SELECT lastAttempt, error, lastUpdate, document FROM feeds WHERE url=?', (url,))
+		row = cursor.fetchone()
+		if row:
+			lastAttempt, error, lastUpdate, document = row
+		now = datetime.datetime.now()
+		if not lastAttempt or now - lastAttempt > datetime.timedelta(minutes=5):
+			lastAttempt = now
+			try:
+				document = unicode(urllib2.urlopen(url).read(), 'utf-8')
+				lastUpdate = now
+			except Exception, e:
+				error = str(e)
+		cursor.execute('INSERT OR REPLACE INTO feeds (url, lastAttempt, error, lastUpdate, document) VALUES (?, ?, ?, ?, ?)', (url, lastAttempt, error, lastUpdate, document))
+		cursor.close()
+		self._db.commit()
+		return {'lastAttempt': lastAttempt, 'lastUpdate': lastUpdate}
 
 class Request(object):
 	SESSION_COOKIE_NAME = 'sessionId' 
@@ -58,7 +97,8 @@ class Request(object):
 
 	def db(self):
 		if not self._db:
-			self._db = sqlite.connect(databaseFilename)
+			self._db = sqlite.connect(databaseFilename, detect_types=sqlite.PARSE_DECLTYPES)
+			self._db.row_factory = sqlite.Row
 		return self._db
 
 	def loadSession(self):
@@ -233,6 +273,18 @@ class Application(object):
 			result['subscriptions'].append({'user': row[0], 'name': row[1], 'feedUrl': row[2], 'parent': row[3]})
 		return self.json(request, result)
 
+	@json
+	def handle_fetchFeed(self, request):
+		form = request.form()
+		feedUrl = form.getvalue('feedUrl')
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		if not feedUrl:
+			raise RuntimeError('Missing feed URL.')
+		feedCache = FeedCache(request.db())
+		feedCache.fetch(feedUrl)
+		return self.json(request, {'feedUrl': feedUrl, 'document': feedCache.get(feedUrl)})
+
 	def handleError(self, request):
 		return self.render(request, 'index.html')
 
@@ -304,6 +356,7 @@ if __name__ == '__main__':
 	cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, secret TEXT, username TEXT)')
 	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity TEXT, UNIQUE(user, identity))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user INTEGER, name TEXT, url TEXT, parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url TEXT PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document TEXT, lastUpdate TIMESTAMP)')
 	try:
 		request.store().createTables()
 	except:
