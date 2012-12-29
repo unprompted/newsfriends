@@ -57,6 +57,39 @@ function refreshFeeds() {
 	}
 }
 
+function updateEntryStatus(div, entry, readButton, starredButton) {
+	function updateReadButton(entry, readButton) {
+		$(readButton).val(entry.read ? "Mark Unread" : "Mark Read");
+	}
+	function updateStarredButton(entry, starredButton) {
+		$(starredButton).val(entry.starred ? "Remove Star" : "Add Star");
+	}
+	function entryUpdated(data) {
+		entry.read = data['read'];
+		entry.starred = data['starred'];
+		updateReadButton(entry, readButton);
+		updateStarredButton(entry, starredButton);
+	}
+	updateReadButton(entry, readButton);
+	updateStarredButton(entry, starredButton);
+	$(readButton).click(function() {
+		$.ajax({
+			type: "POST",
+			url: "setStatus",
+			data: {'article': entry.id, 'read': !entry.read},
+			dataType: 'json',
+		}).done(entryUpdated);
+	});
+	$(starredButton).click(function() {
+		$.ajax({
+			type: "POST",
+			url: "setStatus",
+			data: {'article': entry.id, 'starred': !entry.starred},
+			dataType: 'json',
+		}).done(entryUpdated);
+	});
+}
+
 function loadNews() {
 	$.ajax({
 		type: "POST",
@@ -76,6 +109,11 @@ function loadNews() {
 			$(entryDiv).append(titleDiv);
 			$(entryDiv).append(summaryDiv);
 			$(entryDiv).css({border: "1px solid black", padding: "1em", margin: "1em", "background-color": "#eef"});
+			var readButton = $('<input type="button"></input>');
+			var starredButton = $('<input type="button"></input>');
+			updateEntryStatus(entryDiv, entry, readButton, starredButton);
+			$(entryDiv).append(readButton);
+			$(entryDiv).append(starredButton);
 			$("#articles").append(entryDiv);
 		});
 	});

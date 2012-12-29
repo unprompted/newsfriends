@@ -321,11 +321,43 @@ class Application(object):
 			raise RuntimeError('Must be logged in.')
 		news = {'items': []}
 		cursor = request.db().cursor()
-		cursor.execute('SELECT articles.feed, articles.title, articles.summary FROM subscriptions, articles WHERE subscriptions.user=? AND subscriptions.url=articles.feed ORDER BY published DESC', (request.session['userId'],))
-		for feed, title, summary in cursor:
-			news['items'].append({'feed': feed, 'title': title, 'summary': summary})
+		cursor.execute('''
+			SELECT articles.id, articles.feed, articles.title, articles.summary, statuses.read, statuses.starred
+			FROM subscriptions, articles
+			LEFT OUTER JOIN statuses ON statuses.article=articles.id AND statuses.user=?
+			WHERE subscriptions.user=? AND subscriptions.url=articles.feed AND (NOT statuses.read OR statuses.read IS NULL)
+			ORDER BY published DESC LIMIT 100''',
+			(request.session['userId'], request.session['userId']))
+		for articleId, feed, title, summary, read, starred in cursor:
+			news['items'].append({'id': articleId, 'feed': feed, 'title': title, 'summary': summary, 'read': bool(read), 'starred': bool(starred)})
 		cursor.close()
 		return self.json(request, news)
+
+	@json
+	def handle_setStatus(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		form = request.form()
+		articleId = form.getvalue('article')
+		if not articleId:
+			raise RuntimeError('Missing article.')
+		cursor = request.db().cursor()
+		cursor.execute('SELECT read, starred FROM statuses WHERE article=? AND user=?', (articleId, request.session['userId']))
+		read = False
+		starred = False
+		row = cursor.fetchone()
+		if row:
+			read, starred = row
+		if 'read' in form:
+			read = form.getvalue('read') == 'true'
+		if 'starred' in form:
+			starred = form.getvalue('starred') == 'true'
+		read = bool(read)
+		starred = bool(starred)
+		cursor.execute('INSERT OR REPLACE INTO statuses (article, user, read, starred) VALUES (?, ?, ?, ?)', (articleId, request.session['userId'], read, starred))
+		cursor.close()
+		request.db().commit()
+		return self.json(request, {'read': read, 'starred': starred, 'form': form.getvalue('read')})
 
 	def handleError(self, request):
 		return self.render(request, 'index.html')
@@ -400,6 +432,7 @@ if __name__ == '__main__':
 	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user INTEGER, name TEXT, url TEXT, parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url TEXT PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document TEXT, lastUpdate TIMESTAMP)')
 	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id TEXT PRIMARY KEY, feed TEXT, title TEXT, summary TEXT, published TIMESTAMP)')
+	cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article TEXT, user INTEGER, read BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
 	try:
 		request.store().createTables()
 	except:
