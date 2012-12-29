@@ -3,8 +3,10 @@ var gSubscriptions = [];
 $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
 	$("#refresh_feeds").click(refreshFeeds);
+	$("#get_news").click(loadNews);
 
 	loadSubscriptions();
+	loadNews();
 });
 
 function loadSubscriptions() {
@@ -53,4 +55,28 @@ function refreshFeeds() {
 			console.debug(data);
 		});
 	}
+}
+
+function loadNews() {
+	$.ajax({
+		type: "POST",
+		url: "getNews",
+		data: {},
+		dataType: 'json',
+	}).done(function(data) {
+		$("#articles").empty();
+		console.debug(data.items);
+		var allEntries = []
+		data.items.forEach(function(entry) {
+			var entryDiv = document.createElement('div');
+			var titleDiv = document.createElement('h2');
+			var summaryDiv = document.createElement('div');
+			$(titleDiv).html(entry.title);
+			$(summaryDiv).html(entry.summary);
+			$(entryDiv).append(titleDiv);
+			$(entryDiv).append(summaryDiv);
+			$(entryDiv).css({border: "1px solid black", padding: "1em", margin: "1em", "background-color": "#eef"});
+			$("#articles").append(entryDiv);
+		});
+	});
 }

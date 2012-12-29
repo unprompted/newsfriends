@@ -14,12 +14,20 @@ import mimetypes
 import simplejson
 import urllib2
 import datetime
+import feedparser
+import time
 
 databaseFilename = os.path.join(os.getcwd(), os.path.dirname(__file__), 'data', 'db.sqlite')
 
 def json(method):
 	method.contentType = 'application/json'
 	return method
+
+def jsonDefaultHandler(obj):
+	if isinstance(obj, time.struct_time):
+		return time.mktime(obj)
+	else:
+		raise TypeError, 'Object of type %s with value of %s is not JSON serializable' % (type(obj), repr(obj))
 
 class FeedCache(object):
 	def __init__(self, db):
@@ -271,6 +279,7 @@ class Application(object):
 		result = {'subscriptions': []}
 		for row in cursor:
 			result['subscriptions'].append({'user': row[0], 'name': row[1], 'feedUrl': row[2], 'parent': row[3]})
+		cursor.close()
 		return self.json(request, result)
 
 	@json
@@ -283,7 +292,40 @@ class Application(object):
 			raise RuntimeError('Missing feed URL.')
 		feedCache = FeedCache(request.db())
 		feedCache.fetch(feedUrl)
-		return self.json(request, {'feedUrl': feedUrl, 'document': feedCache.get(feedUrl)})
+
+		def makeHtml(detail):
+			if detail.type == 'text/plain':
+				return cgi.escape(detail.value)
+			elif detail.type == 'text/html' or detail.type == 'application/xhtml+xml':
+				return detail.value
+			else:
+				return cgi.escape(detail.value)
+
+		document = feedCache.get(feedUrl)
+		feed = feedparser.parse(document)
+		cursor = request.db().cursor()
+		for entry in feed.entries:
+			entryId = entry.id
+			entryTitle = makeHtml(entry.title_detail)
+			entrySummary = makeHtml(entry.summary_detail)
+			entryPublished = None
+			if entry.published_parsed:
+				entryPublished = datetime.datetime.fromtimestamp(time.mktime(entry.published_parsed))
+			cursor.execute('INSERT OR REPLACE INTO articles (id, feed, title, summary, published) VALUES (?, ?, ?, ?, ?)', (entryId, feedUrl, entryTitle, entrySummary, entryPublished))
+		cursor.close()
+		return self.json(request, {'feedUrl': feedUrl})
+
+	@json
+	def handle_getNews(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		news = {'items': []}
+		cursor = request.db().cursor()
+		cursor.execute('SELECT articles.feed, articles.title, articles.summary FROM subscriptions, articles WHERE subscriptions.user=? AND subscriptions.url=articles.feed ORDER BY published DESC', (request.session['userId'],))
+		for feed, title, summary in cursor:
+			news['items'].append({'feed': feed, 'title': title, 'summary': summary})
+		cursor.close()
+		return self.json(request, news)
 
 	def handleError(self, request):
 		return self.render(request, 'index.html')
@@ -315,7 +357,7 @@ class Application(object):
 		request.data['session'] = request.session
 		request.data['environment'] = request.environment
 		request.saveSession()
-		result = simplejson.dumps(data)
+		result = simplejson.dumps(data, default=jsonDefaultHandler)
 		request.startResponse('200 OK', [
 			('Content-Type', 'application/json'),
 			('Content-Length', str(len(result))),
@@ -357,6 +399,7 @@ if __name__ == '__main__':
 	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity TEXT, UNIQUE(user, identity))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user INTEGER, name TEXT, url TEXT, parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url TEXT PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document TEXT, lastUpdate TIMESTAMP)')
+	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id TEXT PRIMARY KEY, feed TEXT, title TEXT, summary TEXT, published TIMESTAMP)')
 	try:
 		request.store().createTables()
 	except:

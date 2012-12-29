@@ -3,7 +3,7 @@
 	xmlns:py="http://genshi.edgewall.org/">
 	<?python from genshi.core import Markup ?>
 	<head>
-		<title>OpenID Test</title>
+		<title>News for Cory</title>
 		<base href="${environment.SCRIPT_NAME}/"/>
 		<script type="text/javascript" src="static/jquery.min.js"></script>
 
@@ -22,7 +22,7 @@
 		</py:if>
 	</head>
 	<body>
-		<h1>OpenID Test</h1>
+		<h1>News for Cory</h1>
 		<div style="background: #f88; border: 4px solid #f00; padding: 1em" py:if="defined('error')"><pre>${error}</pre></div>
 		<div py:if="not 'oid' in session">
 			<h2>Log in</h2>
@@ -73,6 +73,8 @@
 			<h2>Feeds</h2>
 			<div id="feeds"/>
 			<input type="submit" id="refresh_feeds" value="Refresh"/>
+			<input type="submit" id="get_news" value="Get News"/>
+			<div id="articles"/>
 		</div>
 	</body>
 </html>
