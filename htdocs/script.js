@@ -1,6 +1,8 @@
 var gSubscriptions = [];
 var gSubscriptionsToFetch = [];
 var gWorkerCount = 0;
+var gSubscriptionsToFetchCount = 0;
+var gSubscriptionsFetchedCount = 0;
 var gSelected = -1;
 
 $(document).ready(function() {
@@ -86,7 +88,12 @@ function addSubscription() {
 }
 
 function refreshFeeds() {
+	$("#articles").empty();
+	$("#feed_message").show();
+	$("#feed_message").text("Loading...");
 	gSubscriptions.forEach(function(subscription) { gSubscriptionsToFetch.push(subscription); });
+	gSubscriptionsToFetchCount = gSubscriptionsToFetch.length;
+	gSubscriptionsFetchedCount = 0;
 	gWorkerCount = 4;
 	for (var i = gWorkerCount; i > 0; i--) {
 		refreshFeedHandler();
@@ -102,7 +109,8 @@ function refreshFeedHandler() {
 			data: { feedUrl: subscription.feedUrl },
 			dataType: 'json',
 		}).done(function(data) {
-			console.debug(data);
+			gSubscriptionsFetchedCount++;
+			$("#feed_message").text("Loading..." + gSubscriptionsFetchedCount + " / " + gSubscriptionsToFetchCount);
 		}).always(refreshFeedHandler);
 	} else {
 		if (--gWorkerCount == 0) {
@@ -120,6 +128,7 @@ function loadNews() {
 	}).done(function(data) {
 		gSelected = -1;
 		$("#articles").empty();
+		$("#feed_message").hide();
 		var allEntries = []
 		data.items.forEach(function(entry) {
 			$("#articles").append(makeEntryNode(entry));
