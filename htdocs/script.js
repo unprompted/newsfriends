@@ -1,9 +1,10 @@
 var gSubscriptions = [];
+var gSubscriptionsToFetch = [];
+var gWorkerCount = 0;
 
 $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
 	$("#refresh_feeds").click(refreshFeeds);
-	$("#get_news").click(loadNews);
 	$("#set_name").click(setName);
 
 	loadSubscriptions();
@@ -58,8 +59,18 @@ function addSubscription() {
 }
 
 function refreshFeeds() {
-	for (var i in gSubscriptions) {
-		var subscription = gSubscriptions[i];
+	gSubscriptions.forEach(function(subscription) { gSubscriptionsToFetch.push(subscription); });
+	console.debug(gSubscriptionsToFetch);
+	gWorkerCount = 4;
+	for (var i = gWorkerCount; i > 0; i--) {
+		refreshFeedHandler();
+	}
+}
+
+function refreshFeedHandler() {
+	console.debug("entering refreshFeedHandler with gWorkerCount = " + gWorkerCount);
+	var subscription = gSubscriptionsToFetch.pop();
+	if (subscription != null) {
 		$.ajax({
 			type: "POST",
 			url: "fetchFeed",
@@ -67,8 +78,29 @@ function refreshFeeds() {
 			dataType: 'json',
 		}).done(function(data) {
 			console.debug(data);
-		});
+		}).always(refreshFeedHandler);
+	} else {
+		if (--gWorkerCount == 0) {
+			loadNews();
+		}
+		console.debug("gWorkerCount => " + gWorkerCount);
 	}
+}
+
+function loadNews() {
+	$.ajax({
+		type: "POST",
+		url: "getNews",
+		data: {},
+		dataType: 'json',
+	}).done(function(data) {
+		$("#articles").empty();
+		console.debug(data.items);
+		var allEntries = []
+		data.items.forEach(function(entry) {
+			$("#articles").append(makeEntryNode(entry));
+		});
+	});
 }
 
 function makeEntryNode(entry) {
@@ -156,20 +188,4 @@ function makeEntryNode(entry) {
 	});
 
 	return $(entryDiv);
-}
-
-function loadNews() {
-	$.ajax({
-		type: "POST",
-		url: "getNews",
-		data: {},
-		dataType: 'json',
-	}).done(function(data) {
-		$("#articles").empty();
-		console.debug(data.items);
-		var allEntries = []
-		data.items.forEach(function(entry) {
-			$("#articles").append(makeEntryNode(entry));
-		});
-	});
 }
