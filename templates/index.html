@@ -48,6 +48,10 @@
 		<div py:if="'oid' in session">
 			<h2>Welcome</h2>
 			<div>Your OpenID is: <code>${session.oid}</code>.  <a href="${environment.SCRIPT_NAME}/logout">Log out</a>.</div>
+			<div>
+				<input type="text" id="name" value="${session.username}"/>
+				<input type="submit" id="set_name" value="Set Name"/>
+			</div>
 			<h2>Subscriptions</h2>
 			<div>
 				<div>

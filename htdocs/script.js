@@ -4,6 +4,7 @@ $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
 	$("#refresh_feeds").click(refreshFeeds);
 	$("#get_news").click(loadNews);
+	$("#set_name").click(setName);
 
 	loadSubscriptions();
 	loadNews();
@@ -26,6 +27,19 @@ function loadSubscriptions() {
 			$(li).text(subscription.feedUrl);
 			$("#subscriptions").append(li);
 		}
+	});
+}
+
+function setName() {
+	var newName = $("#name").val();
+	$("#set_name").get().disabled = true;
+	$.ajax({
+		type: "POST",
+		url: "setName",
+		data: {'name': newName},
+		dataType: 'json',
+	}).always(function(data) {
+		$("#set_name").get().disabled = false;
 	});
 }
 
@@ -57,21 +71,65 @@ function refreshFeeds() {
 	}
 }
 
-function updateEntryStatus(div, entry, readButton, starredButton) {
+function makeEntryNode(entry) {
+	var entryDiv = document.createElement('div');
+	var titleDiv = document.createElement('h2');
+	var summaryDiv = document.createElement('div');
+	if (entry.sharedBy != null) {
+		var div = document.createElement('div');
+		var span = document.createElement('span');
+		$(span).text("Shared by: ");
+		$(div).append(span);
+		span = document.createElement('span');
+		$(span).text(entry.sharedBy);
+		$(span).css("font-weight", "bold");
+		$(div).append(span);
+		if (entry.sharedNote != null) {
+			span = document.createElement('span');
+			$(span).text(entry.sharedNote);
+			$(span).css({'background-color': '#fff', 'border': '2px solid black', 'margin': '1em', 'padding': '0.5em', 'display': 'block'});
+			$(div).append(span);
+		}
+		$(entryDiv).append(div);
+	}
+	$(titleDiv).html(entry.title);
+	$(summaryDiv).html(entry.summary);
+	$(entryDiv).append(titleDiv);
+	$(entryDiv).append(summaryDiv);
+	$(entryDiv).css({border: "1px solid black", padding: "1em", margin: "1em", "background-color": "#eef"});
+	var readButton = $('<input type="button"></input>');
+	var starredButton = $('<input type="button"></input>');
+	var shareButton = $('<input type="button"></input>');
+	$(entryDiv).append(readButton);
+	$(entryDiv).append(starredButton);
+	$(entryDiv).append(shareButton);
+
 	function updateReadButton(entry, readButton) {
 		$(readButton).val(entry.read ? "Mark Unread" : "Mark Read");
 	}
 	function updateStarredButton(entry, starredButton) {
 		$(starredButton).val(entry.starred ? "Remove Star" : "Add Star");
 	}
+	function updateShareButton(entry, shareButton) {
+		$(shareButton).val(entry.shared ? "Unshare" : "Share");
+	}
 	function entryUpdated(data) {
-		entry.read = data['read'];
-		entry.starred = data['starred'];
-		updateReadButton(entry, readButton);
-		updateStarredButton(entry, starredButton);
+		if ('read' in data) {
+			entry.read = data['read'];
+			updateReadButton(entry, readButton);
+		}
+		if ('starred' in data) {
+			entry.starred = data['starred'];
+			updateStarredButton(entry, starredButton);
+		}
+		if ('shared' in data) {
+			entry.shared = data['shared'];
+			updateShareButton(entry, shareButton);
+		}
 	}
 	updateReadButton(entry, readButton);
 	updateStarredButton(entry, starredButton);
+	updateShareButton(entry, shareButton);
 	$(readButton).click(function() {
 		$.ajax({
 			type: "POST",
@@ -88,6 +146,16 @@ function updateEntryStatus(div, entry, readButton, starredButton) {
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
+	$(shareButton).click(function() {
+		$.ajax({
+			type: "POST",
+			url: "setShared",
+			data: {'article': entry.id, 'share': !entry.shared},
+			dataType: 'json',
+		}).done(entryUpdated);
+	});
+
+	return $(entryDiv);
 }
 
 function loadNews() {
@@ -101,20 +169,7 @@ function loadNews() {
 		console.debug(data.items);
 		var allEntries = []
 		data.items.forEach(function(entry) {
-			var entryDiv = document.createElement('div');
-			var titleDiv = document.createElement('h2');
-			var summaryDiv = document.createElement('div');
-			$(titleDiv).html(entry.title);
-			$(summaryDiv).html(entry.summary);
-			$(entryDiv).append(titleDiv);
-			$(entryDiv).append(summaryDiv);
-			$(entryDiv).css({border: "1px solid black", padding: "1em", margin: "1em", "background-color": "#eef"});
-			var readButton = $('<input type="button"></input>');
-			var starredButton = $('<input type="button"></input>');
-			updateEntryStatus(entryDiv, entry, readButton, starredButton);
-			$(entryDiv).append(readButton);
-			$(entryDiv).append(starredButton);
-			$("#articles").append(entryDiv);
+			$("#articles").append(makeEntryNode(entry));
 		});
 	});
 }

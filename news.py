@@ -57,7 +57,8 @@ class FeedCache(object):
 		if not lastAttempt or now - lastAttempt > datetime.timedelta(minutes=5):
 			lastAttempt = now
 			try:
-				document = unicode(urllib2.urlopen(url).read(), 'utf-8')
+				headers = {'User-Agent': 'UnpromptedNews/1.0'}
+				document = unicode(urllib2.urlopen(urllib2.Request(url, None, headers)).read(), 'utf-8')
 				lastUpdate = now
 			except Exception, e:
 				error = str(e)
@@ -135,9 +136,9 @@ class Request(object):
 		cursor.execute('SELECT user FROM identities WHERE identity=?', (self.session['oid'],))
 		row = cursor.fetchone()
 		if row:
+			self.session['userId'] = row[0]
 			cursor.execute('SELECT secret, username FROM users WHERE id=?', (row[0],))
 			secret, username = cursor.fetchone()
-			self.session['userId'] = row[0]
 			self.session['secret'] = secret
 			self.session['username'] = username
 		else:
@@ -277,8 +278,8 @@ class Application(object):
 		cursor = request.db().cursor()
 		cursor.execute('SELECT user, name, url, parent FROM subscriptions WHERE user=? ORDER BY name DESC, url DESC', (request.session['userId'],))
 		result = {'subscriptions': []}
-		for row in cursor:
-			result['subscriptions'].append({'user': row[0], 'name': row[1], 'feedUrl': row[2], 'parent': row[3]})
+		for user, name, feedUrl, parent in cursor:
+			result['subscriptions'].append({'user': user, 'name': name, 'feedUrl': feedUrl, 'parent': parent})
 		cursor.close()
 		return self.json(request, result)
 
@@ -291,7 +292,10 @@ class Application(object):
 		if not feedUrl:
 			raise RuntimeError('Missing feed URL.')
 		feedCache = FeedCache(request.db())
-		feedCache.fetch(feedUrl)
+		if feedUrl.startswith('http://') or feedUrl.startswith('https://'):
+			feedCache.fetch(feedUrl)
+		else:
+			pass
 
 		def makeHtml(detail):
 			if detail.type == 'text/plain':
@@ -321,15 +325,23 @@ class Application(object):
 			raise RuntimeError('Must be logged in.')
 		news = {'items': []}
 		cursor = request.db().cursor()
+		# article feed user note
 		cursor.execute('''
-			SELECT articles.id, articles.feed, articles.title, articles.summary, statuses.read, statuses.starred
-			FROM subscriptions, articles
-			LEFT OUTER JOIN statuses ON statuses.article=articles.id AND statuses.user=?
-			WHERE subscriptions.user=? AND subscriptions.url=articles.feed AND (NOT statuses.read OR statuses.read IS NULL)
+			SELECT articles.id, articles.feed, articles.title, articles.summary, statuses.read, statuses.starred, shares.article IS NOT NULL AS isShared, users.username, sharedNote
+			FROM articles
+			LEFT OUTER JOIN statuses ON statuses.user=? AND statuses.article=articles.id
+			LEFT OUTER JOIN subscriptions ON subscriptions.user=? AND subscriptions.url=articles.feed
+			LEFT OUTER JOIN
+				(SELECT shares.article AS sharedArticle, friends.friend AS sharedBy, shares.note as sharedNote FROM shares, friends WHERE shares.user=friends.friend AND friends.user=?)
+				ON sharedArticle=articles.id
+			LEFT OUTER JOIN shares ON shares.article=articles.id AND shares.user=?
+			LEFT OUTER JOIN users ON sharedBy=users.id
+			WHERE (NOT statuses.read OR statuses.read IS NULL) AND (statuses.user=? OR subscriptions.user=? OR sharedArticle IS NOT NULL)
 			ORDER BY published DESC LIMIT 100''',
-			(request.session['userId'], request.session['userId']))
-		for articleId, feed, title, summary, read, starred in cursor:
-			news['items'].append({'id': articleId, 'feed': feed, 'title': title, 'summary': summary, 'read': bool(read), 'starred': bool(starred)})
+			(request.session['userId'],) * 6)
+
+		for articleId, feed, title, summary, read, starred, shared, sharedBy, sharedNote in cursor:
+			news['items'].append({'id': articleId, 'feed': feed, 'title': title, 'summary': summary, 'read': bool(read), 'starred': bool(starred), 'shared': bool(shared), 'sharedBy': sharedBy, 'sharedNote': sharedNote})
 		cursor.close()
 		return self.json(request, news)
 
@@ -358,6 +370,40 @@ class Application(object):
 		cursor.close()
 		request.db().commit()
 		return self.json(request, {'read': read, 'starred': starred, 'form': form.getvalue('read')})
+
+	@json
+	def handle_setShared(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		form = request.form()
+		articleId = form.getvalue('article')
+		if not articleId:
+			raise RuntimeError('Missing article.')
+		feedUrl = form.getvalue('feed')
+		cursor = request.db().cursor()
+		share = form.getvalue('share') == 'true'
+		if share:
+			cursor.execute('INSERT INTO shares (article, feed, user, note) VALUES (?, ?, ?, ?)', (articleId, feedUrl, request.session['userId'], None))
+		else:
+			cursor.execute('DELETE FROM shares WHERE article=? AND user=?', (articleId, request.session['userId']))
+		rows = cursor.rowcount
+		cursor.close()
+		request.db().commit()
+		return self.json(request, {'shared': share})
+
+	@json
+	def handle_setName(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		form = request.form()
+		name = form.getvalue('name')
+		cursor = request.db().cursor()
+		cursor.execute('UPDATE users SET username=? WHERE id=?', (name, request.session['userId']))
+		request.session['username'] = name
+		rows = cursor.rowcount
+		cursor.close()
+		request.db().commit()
+		return self.json(request, {'affectedRows': rows})
 
 	def handleError(self, request):
 		return self.render(request, 'index.html')
@@ -433,6 +479,8 @@ if __name__ == '__main__':
 	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url TEXT PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document TEXT, lastUpdate TIMESTAMP)')
 	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id TEXT PRIMARY KEY, feed TEXT, title TEXT, summary TEXT, published TIMESTAMP)')
 	cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article TEXT, user INTEGER, read BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTOINCREMENT, article TEXT, feed TEXT, user INTEGER, note TEXT, UNIQUE(article, feed, user))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS friends (user INTEGER, friend INTEGER, UNIQUE(user, friend))')
 	try:
 		request.store().createTables()
 	except:
