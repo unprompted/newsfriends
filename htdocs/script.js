@@ -31,6 +31,8 @@ $(document).keypress(function(event) {
 		}
 	} else if (character == 'r') {
 		refreshFeeds();
+	} else if (character == 's') {
+		$("#articles").children().eq(gSelected).trigger('toggleStarred');
 	}
 
 	if (lastSelected != gSelected) {
@@ -162,7 +164,8 @@ function makeEntryNode(entry) {
 	$(expand).addClass('expand');
 	var summaryDiv = document.createElement('div');
 	var link = document.createElement('a');
-	$(link).attr('href', entry.id);
+	$(link).attr('href', entry.link || entry.id);
+	$(link).attr('target', '_blank');
 	$(link).html(entry.title);
 	$(titleDiv).append(link);
 	$(summaryDiv).html(entry.summary);
@@ -175,7 +178,6 @@ function makeEntryNode(entry) {
 	$(expand).append(readButton);
 	$(expand).append(starredButton);
 	$(expand).append(shareButton);
-	//$(expand).hide();
 
 	function updateReadButton(entry, readButton) {
 		$(readButton).val(entry.read ? "Mark Unread" : "Mark Read");
@@ -212,7 +214,15 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'article': entry.id, 'read': true},
+			data: {'feed': entry.feed, 'article': entry.id, 'read': true},
+			dataType: 'json',
+		}).done(entryUpdated);
+	});
+	$(entryDiv).on('toggleStarred', function() {
+		$.ajax({
+			type: "POST",
+			url: "setStatus",
+			data: {'feed': entry.feed, 'article': entry.id, 'starred': !entry.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -220,7 +230,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'article': entry.id, 'read': !entry.read},
+			data: {'feed': entry.feed, 'article': entry.id, 'read': !entry.read},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -228,7 +238,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'article': entry.id, 'starred': !entry.starred},
+			data: {'feed': entry.feed, 'article': entry.id, 'starred': !entry.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -236,7 +246,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setShared",
-			data: {'article': entry.id, 'share': !entry.shared},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': !entry.shared},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});

@@ -310,6 +310,7 @@ class Application(object):
 		cursor = request.db().cursor()
 		for entry in feed.entries:
 			entryId = entry.id
+			entryLink = entry.link if 'link' in entry else None
 			entryTitle = makeHtml(entry.title_detail)
 			if 'content' in entry and entry.content:
 				entrySummary = '\n'.join(makeHtml(content) for content in entry.content)
@@ -318,7 +319,7 @@ class Application(object):
 			entryPublished = None
 			if entry.published_parsed:
 				entryPublished = datetime.datetime.fromtimestamp(time.mktime(entry.published_parsed))
-			cursor.execute('INSERT OR REPLACE INTO articles (id, feed, title, summary, published) VALUES (?, ?, ?, ?, ?)', (entryId, feedUrl, entryTitle, entrySummary, entryPublished))
+			cursor.execute('INSERT OR REPLACE INTO articles (id, feed, title, summary, link, published) VALUES (?, ?, ?, ?, ?, ?)', (entryId, feedUrl, entryTitle, entrySummary, entryLink, entryPublished))
 		cursor.close()
 		return self.json(request, {'feedUrl': feedUrl})
 
@@ -330,7 +331,7 @@ class Application(object):
 		cursor = request.db().cursor()
 		# article feed user note
 		cursor.execute('''
-			SELECT articles.id, articles.feed, articles.title, articles.summary, statuses.read, statuses.starred, shares.article IS NOT NULL AS isShared, users.username, sharedNote
+			SELECT articles.id, articles.feed, articles.title, articles.summary, articles.link, statuses.read, statuses.starred, shares.article IS NOT NULL AS isShared, users.username, sharedNote
 			FROM articles
 			LEFT OUTER JOIN statuses ON statuses.user=? AND statuses.article=articles.id
 			LEFT OUTER JOIN subscriptions ON subscriptions.user=? AND subscriptions.url=articles.feed
@@ -343,8 +344,8 @@ class Application(object):
 			ORDER BY published DESC LIMIT 100''',
 			(request.session['userId'],) * 6)
 
-		for articleId, feed, title, summary, read, starred, shared, sharedBy, sharedNote in cursor:
-			news['items'].append({'id': articleId, 'feed': feed, 'title': title, 'summary': summary, 'read': bool(read), 'starred': bool(starred), 'shared': bool(shared), 'sharedBy': sharedBy, 'sharedNote': sharedNote})
+		for articleId, feed, title, summary, link, read, starred, shared, sharedBy, sharedNote in cursor:
+			news['items'].append({'id': articleId, 'feed': feed, 'title': title, 'summary': summary, 'link': link, 'read': bool(read), 'starred': bool(starred), 'shared': bool(shared), 'sharedBy': sharedBy, 'sharedNote': sharedNote})
 		cursor.close()
 		return self.json(request, news)
 
@@ -480,7 +481,7 @@ if __name__ == '__main__':
 	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity TEXT, UNIQUE(user, identity))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user INTEGER, name TEXT, url TEXT, parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url TEXT PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document TEXT, lastUpdate TIMESTAMP)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id TEXT PRIMARY KEY, feed TEXT, title TEXT, summary TEXT, published TIMESTAMP)')
+	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id TEXT PRIMARY KEY, feed TEXT, title TEXT, summary TEXT, link TEXT, published TIMESTAMP)')
 	cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article TEXT, user INTEGER, read BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTOINCREMENT, article TEXT, feed TEXT, user INTEGER, note TEXT, UNIQUE(article, feed, user))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS friends (user INTEGER, friend INTEGER, UNIQUE(user, friend))')
