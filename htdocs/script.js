@@ -1,6 +1,7 @@
 var gSubscriptions = [];
 var gSubscriptionsToFetch = [];
 var gWorkerCount = 0;
+var gSelected = -1;
 
 $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
@@ -9,6 +10,33 @@ $(document).ready(function() {
 
 	loadSubscriptions();
 	loadNews();
+});
+
+$(document).keypress(function(event) {
+	var character = String.fromCharCode(event.keyCode);
+	var lastSelected = gSelected;
+	if (character == 'j') {
+		if (gSelected == -1) {
+			gSelected = 0;
+		} else if (gSelected >= 0 && gSelected < $("#articles").children().length - 1) {
+			gSelected++;
+		}
+	} else if (character == 'k') {
+		if (gSelected == -1) {
+			gSelected = $("#articles").children().length - 1;
+		} else if (gSelected > 0 && gSelected < $("#articles").children().length) {
+			gSelected--;
+		}
+	} else if (character == 'r') {
+		refreshFeeds();
+	}
+
+	if (lastSelected != gSelected) {
+		$("#articles").children().eq(lastSelected).removeClass('selected');
+		var toShow = $("#articles").children().eq(gSelected);
+		toShow.addClass('selected');
+		toShow.trigger('markRead');
+	}
 });
 
 function loadSubscriptions() {
@@ -53,14 +81,12 @@ function addSubscription() {
 		data: { feedUrl: feedUrl },
 		dataType: 'json',
 	}).done(function(data) {
-		console.debug(data);
 		loadSubscriptions();
 	});
 }
 
 function refreshFeeds() {
 	gSubscriptions.forEach(function(subscription) { gSubscriptionsToFetch.push(subscription); });
-	console.debug(gSubscriptionsToFetch);
 	gWorkerCount = 4;
 	for (var i = gWorkerCount; i > 0; i--) {
 		refreshFeedHandler();
@@ -68,7 +94,6 @@ function refreshFeeds() {
 }
 
 function refreshFeedHandler() {
-	console.debug("entering refreshFeedHandler with gWorkerCount = " + gWorkerCount);
 	var subscription = gSubscriptionsToFetch.pop();
 	if (subscription != null) {
 		$.ajax({
@@ -83,7 +108,6 @@ function refreshFeedHandler() {
 		if (--gWorkerCount == 0) {
 			loadNews();
 		}
-		console.debug("gWorkerCount => " + gWorkerCount);
 	}
 }
 
@@ -94,8 +118,8 @@ function loadNews() {
 		data: {},
 		dataType: 'json',
 	}).done(function(data) {
+		gSelected = -1;
 		$("#articles").empty();
-		console.debug(data.items);
 		var allEntries = []
 		data.items.forEach(function(entry) {
 			$("#articles").append(makeEntryNode(entry));
@@ -105,8 +129,9 @@ function loadNews() {
 
 function makeEntryNode(entry) {
 	var entryDiv = document.createElement('div');
-	var titleDiv = document.createElement('h2');
-	var summaryDiv = document.createElement('div');
+	$(entryDiv).addClass('article');
+	var titleDiv = document.createElement('div');
+	$(titleDiv).css({'font-weight': 'bold'});
 	if (entry.sharedBy != null) {
 		var div = document.createElement('div');
 		var span = document.createElement('span');
@@ -124,20 +149,24 @@ function makeEntryNode(entry) {
 		}
 		$(entryDiv).append(div);
 	}
+	var expand = document.createElement('div');
+	$(expand).addClass('expand');
+	var summaryDiv = document.createElement('div');
 	var link = document.createElement('a');
 	$(link).attr('href', entry.id);
 	$(link).html(entry.title);
 	$(titleDiv).append(link);
 	$(summaryDiv).html(entry.summary);
 	$(entryDiv).append(titleDiv);
-	$(entryDiv).append(summaryDiv);
-	$(entryDiv).css({border: "1px solid black", padding: "1em", margin: "1em", "background-color": "#eef"});
+	$(entryDiv).append(expand);
+	$(expand).append(summaryDiv);
 	var readButton = $('<input type="button"></input>');
 	var starredButton = $('<input type="button"></input>');
 	var shareButton = $('<input type="button"></input>');
-	$(entryDiv).append(readButton);
-	$(entryDiv).append(starredButton);
-	$(entryDiv).append(shareButton);
+	$(expand).append(readButton);
+	$(expand).append(starredButton);
+	$(expand).append(shareButton);
+	//$(expand).hide();
 
 	function updateReadButton(entry, readButton) {
 		$(readButton).val(entry.read ? "Mark Unread" : "Mark Read");
@@ -161,10 +190,23 @@ function makeEntryNode(entry) {
 			entry.shared = data['shared'];
 			updateShareButton(entry, shareButton);
 		}
+		if (entry.read) {
+			$(entryDiv).addClass('read');
+		} else {
+			$(entryDiv).removeClass('read');
+		}
 	}
 	updateReadButton(entry, readButton);
 	updateStarredButton(entry, starredButton);
 	updateShareButton(entry, shareButton);
+	$(entryDiv).on('markRead', function() {
+		$.ajax({
+			type: "POST",
+			url: "setStatus",
+			data: {'article': entry.id, 'read': true},
+			dataType: 'json',
+		}).done(entryUpdated);
+	});
 	$(readButton).click(function() {
 		$.ajax({
 			type: "POST",
