@@ -311,7 +311,10 @@ class Application(object):
 		for entry in feed.entries:
 			entryId = entry.id
 			entryTitle = makeHtml(entry.title_detail)
-			entrySummary = makeHtml(entry.summary_detail)
+			if 'content' in entry and entry.content:
+				entrySummary = '\n'.join(makeHtml(content) for content in entry.content)
+			else:
+				entrySummary = makeHtml(entry.summary_detail)
 			entryPublished = None
 			if entry.published_parsed:
 				entryPublished = datetime.datetime.fromtimestamp(time.mktime(entry.published_parsed))

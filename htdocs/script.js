@@ -124,7 +124,10 @@ function makeEntryNode(entry) {
 		}
 		$(entryDiv).append(div);
 	}
-	$(titleDiv).html(entry.title);
+	var link = document.createElement('a');
+	$(link).attr('href', entry.id);
+	$(link).html(entry.title);
+	$(titleDiv).append(link);
 	$(summaryDiv).html(entry.summary);
 	$(entryDiv).append(titleDiv);
 	$(entryDiv).append(summaryDiv);
