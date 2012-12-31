@@ -43,6 +43,26 @@ $(document).keypress(function(event) {
 	}
 });
 
+function makeSubscriptionNode(subscription) {
+	var li = document.createElement('li');
+	$(li).text(subscription.name || subscription.feedUrl);
+	var button = document.createElement('input');
+	$(button).attr('type', 'button');
+	$(button).attr('value', 'Delete');
+	$(button).click(function() {
+		$.ajax({
+			type: "POST",
+			url: "deleteSubscription",
+			data: { feedUrl: subscription.feedUrl },
+			dataType: 'json',
+		}).done(function(data) {
+			loadSubscriptions();
+		});
+	});
+	$(li).append(button);
+	$("#subscriptions").append(li);
+}
+
 function loadSubscriptions() {
 	$("#subscriptions").empty();
 	$("#subscriptions").append("<li>Loading...</li>");
@@ -54,12 +74,9 @@ function loadSubscriptions() {
 		console.debug(data);
 		gSubscriptions = data['subscriptions'];
 		$("#subscriptions").empty();
-		for (var i in data['subscriptions']) {
-			var subscription = data['subscriptions'][i];
-			var li = document.createElement('li');
-			$(li).text(subscription.feedUrl);
-			$("#subscriptions").append(li);
-		}
+		data['subscriptions'].forEach(function(subscription) {
+			$("#subscriptions").append(makeSubscriptionNode(subscription));
+		});
 	});
 }
 

@@ -272,6 +272,22 @@ class Application(object):
 		return self.json(request, result)
 
 	@json
+	def handle_deleteSubscription(self, request):
+		form = request.form()
+		feedUrl = form.getvalue('feedUrl')
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		if not feedUrl:
+			raise RuntimeError('Missing feed URL.')
+		result = {}
+		cursor = request.db().cursor()
+		cursor.execute('DELETE FROM subscriptions WHERE user=? AND url=?', (request.session['userId'], feedUrl))
+		result['affectedRows'] = cursor.rowcount
+		cursor.close()
+		request.db().commit()
+		return self.json(request, result)
+
+	@json
 	def handle_getSubscriptions(self, request):
 		if not 'userId' in request.session:
 			raise RuntimeError('Must be logged in.')
