@@ -10,8 +10,10 @@ $(document).ready(function() {
 	$("#refresh_feeds").click(refreshFeeds);
 	$("#set_name").click(setName);
 
-	loadSubscriptions();
-	loadNews();
+	if (gAuthenticated) {
+		loadSubscriptions();
+		loadNews();
+	}
 });
 
 $(document).keypress(function(event) {
@@ -90,7 +92,6 @@ function loadSubscriptions() {
 		url: "getSubscriptions",
 		dataType: 'json',
 	}).done(function(data) {
-		console.debug(data);
 		gSubscriptions = data['subscriptions'];
 		$("#subscriptions").empty();
 		data['subscriptions'].forEach(function(subscription) {
@@ -167,13 +168,20 @@ function loadNews() {
 		dataType: 'json',
 		timeout: 15000,
 	}).done(function(data) {
-		gSelected = -1;
-		$("#articles").empty();
-		$("#feed_message").hide();
-		var allEntries = []
-		data.items.forEach(function(entry) {
-			$("#articles").append(makeEntryNode(entry));
-		});
+		if (data.error) {
+			$("#error_message").text(data.error);
+			$("#error_traceback").text(data.traceback);
+			$("#error").show();
+		} else {
+			$("#error").hide();
+			gSelected = -1;
+			$("#articles").empty();
+			$("#feed_message").hide();
+			var allEntries = []
+			data.items.forEach(function(entry) {
+				$("#articles").append(makeEntryNode(entry));
+			});
+		}
 	});
 }
 
@@ -219,7 +227,7 @@ function makeEntryNode(entry) {
 	$(expand).append(shareButton);
 
 	function updateReadButton(entry, readButton) {
-		$(readButton).val(entry.read ? "Mark Unread" : "Mark Read");
+		$(readButton).val(entry.isRead ? "Mark Unread" : "Mark Read");
 	}
 	function updateStarredButton(entry, starredButton) {
 		$(starredButton).val(entry.starred ? "Remove Star" : "Add Star");
@@ -228,8 +236,8 @@ function makeEntryNode(entry) {
 		$(shareButton).val(entry.shared ? "Unshare" : "Share");
 	}
 	function entryUpdated(data) {
-		if ('read' in data) {
-			entry.read = data['read'];
+		if ('isRead' in data) {
+			entry.isRead = data['isRead'];
 			updateReadButton(entry, readButton);
 		}
 		if ('starred' in data) {
@@ -240,7 +248,7 @@ function makeEntryNode(entry) {
 			entry.shared = data['shared'];
 			updateShareButton(entry, shareButton);
 		}
-		if (entry.read) {
+		if (entry.isRead) {
 			$(entryDiv).addClass('read');
 		} else {
 			$(entryDiv).removeClass('read');
@@ -253,7 +261,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'read': true},
+			data: {'feed': entry.feed, 'article': entry.id, 'isRead': true},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -269,7 +277,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'read': !entry.read},
+			data: {'feed': entry.feed, 'article': entry.id, 'isRead': !entry.isRead},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});

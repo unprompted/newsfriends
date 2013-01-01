@@ -1,15 +1,15 @@
 #!/usr/bin/python
 
 import os
-from sqlite3 import dbapi2 as sqlite
+import MySQLdb as sql
 import cgi
 from openid.consumer import consumer
-from openid.store.sqlstore import SQLiteStore
+from openid.store.sqlstore import MySQLStore
 from openid.cryptutil import randomString
 import cgitb; cgitb.enable()
 from Cookie import SimpleCookie
 from genshi.template import TemplateLoader
-import cPickle
+import pickle
 import mimetypes
 import simplejson
 import urllib2
@@ -17,8 +17,9 @@ import datetime
 import feedparser
 import time
 from xml.etree import ElementTree as ET
+import base64
 
-databaseFilename = os.path.join(os.getcwd(), os.path.dirname(__file__), 'data', 'db.sqlite')
+dbArgs = {'user': 'news', 'passwd': 'news', 'db': 'news'}
 
 def json(method):
 	method.contentType = 'application/json'
@@ -27,6 +28,8 @@ def json(method):
 def jsonDefaultHandler(obj):
 	if isinstance(obj, time.struct_time):
 		return time.mktime(obj)
+	elif isinstance(obj, datetime.datetime):
+		return time.mktime(obj.timetuple())
 	else:
 		raise TypeError, 'Object of type %s with value of %s is not JSON serializable' % (type(obj), repr(obj))
 
@@ -37,12 +40,12 @@ class FeedCache(object):
 	def get(self, url):
 		document = None
 		cursor = self._db.cursor()
-		cursor.execute('SELECT document FROM feeds WHERE url=?', (url,))
+		cursor.execute('SELECT document FROM feeds WHERE url=%s', (url,))
 		row = cursor.fetchone()
 		if row:
 			document = row[0]
 		cursor.close()
-		return document
+		return document.encode('utf-8')
 
 	def fetch(self, url):
 		cursor = self._db.cursor()
@@ -50,11 +53,10 @@ class FeedCache(object):
 		lastUpdate = None
 		error = None
 		document = None
-		cursor.execute('SELECT lastAttempt, error, lastUpdate, document FROM feeds WHERE url=?', (url,))
+		cursor.execute('SELECT lastAttempt, error, lastUpdate, document FROM feeds WHERE url=%s', (url,))
 		row = cursor.fetchone()
 		if row:
 			lastAttempt, error, lastUpdate, document = row
-		cursor.close()
 		now = datetime.datetime.now()
 		if not lastAttempt or now - lastAttempt > datetime.timedelta(minutes=5):
 			lastAttempt = now
@@ -64,7 +66,7 @@ class FeedCache(object):
 				lastUpdate = now
 			except Exception, e:
 				error = str(e)
-		cursor.execute('INSERT OR REPLACE INTO feeds (url, lastAttempt, error, lastUpdate, document) VALUES (?, ?, ?, ?, ?)', (url, lastAttempt, error, lastUpdate, document))
+		cursor.execute('REPLACE INTO feeds (url, lastAttempt, error, lastUpdate, document) VALUES (%s, %s, %s, %s, %s)', (url, lastAttempt, error, lastUpdate, document))
 		cursor.close()
 		self._db.commit()
 		return {'lastAttempt': lastAttempt, 'lastUpdate': lastUpdate}
@@ -108,53 +110,53 @@ class Request(object):
 
 	def db(self):
 		if not self._db:
-			self._db = sqlite.connect(databaseFilename, detect_types=sqlite.PARSE_DECLTYPES)
-			self._db.row_factory = sqlite.Row
+			self._db = sql.connect('localhost', charset='utf8', use_unicode=True, **dbArgs)
+			self._db.set_character_set('utf8')
+			cursor = self._db.cursor()
+			cursor.execute('SET NAMES utf8')
+			cursor.execute('SET CHARACTER SET utf8')
+			cursor.execute('SET character_Set_connection=utf8')
+			cursor.close()
 		return self._db
 
 	def loadSession(self):
 		cursor = self.db().cursor()
-		cursor.execute('SELECT name, value FROM sessions WHERE session=?', (self.sessionId(),))
+		cursor.execute('SELECT name, value FROM sessions WHERE session=%s', (self.sessionId(),))
 		for name, value in cursor:
-			self.session[name] = cPickle.loads(str(value))
+			self.session[name] = pickle.loads(base64.b64decode(value))
 		cursor.close()
 
 	def saveSession(self):
 		cursor = self.db().cursor()
 		for name, value in self.session.items():
-			blob = sqlite.Binary(cPickle.dumps(value))
-			try:
-				cursor.execute('INSERT INTO sessions (session, name, value) VALUES (?, ?, ?)', (self.sessionId(), name, blob))
-			except Exception, e:
-				cursor.execute('UPDATE sessions SET value=? WHERE session=? AND name=?', (blob, self.sessionId(), name))
-				if cursor.rowcount == 0:
-					raise RuntimeError('Could not save session variable %s=%s: %s' % (name, value, str(e)))
-		cursor.execute('DELETE FROM sessions WHERE session=? AND NOT name IN (%s)' % (', '.join('?' for key in self.session)), [self.sessionId()] + self.session.keys())
+			blob = base64.b64encode(pickle.dumps(value))
+			cursor.execute('REPLACE INTO sessions (session, name, value) VALUES (%s, %s, %s)', (self.sessionId(), name, blob))
+		cursor.execute('DELETE FROM sessions WHERE session=%%s AND NOT name IN (%s)' % (', '.join('%s' for key in self.session)), [self.sessionId()] + self.session.keys())
 		self.db().commit()
 		cursor.close()
 
 	def loginUser(self):
 		cursor = self.db().cursor()
-		cursor.execute('SELECT user FROM identities WHERE identity=?', (self.session['oid'],))
+		cursor.execute('SELECT user FROM identities WHERE identity=%s', (self.session['oid'],))
 		row = cursor.fetchone()
 		if row:
 			self.session['userId'] = row[0]
-			cursor.execute('SELECT secret, username FROM users WHERE id=?', (row[0],))
+			cursor.execute('SELECT secret, username FROM users WHERE id=%s', (row[0],))
 			secret, username = cursor.fetchone()
 			self.session['secret'] = secret
 			self.session['username'] = username
 		else:
 			self.session['secret'] = randomString(16, '0123456789ABCDEF')
 			self.session['username'] = None
-			cursor.execute('INSERT INTO users (secret) VALUES (?)', (self.session['secret'],))
+			cursor.execute('INSERT INTO users (secret) VALUES (%s)', (self.session['secret'],))
 			self.session['userId'] = cursor.lastrowid
-			cursor.execute('INSERT INTO identities (user, identity) VALUES (?, ?)', (self.session['userId'], self.session['oid']))
+			cursor.execute('INSERT INTO identities (user, identity) VALUES (%s, %s)', (self.session['userId'], self.session['oid']))
 			self.db().commit()
 		cursor.close()
 
 	def store(self):
 		if not self._store:
-			self._store = SQLiteStore(self.db())
+			self._store = MySQLStore(self.db())
 		return self._store
 
 	def consumer(self):
@@ -267,7 +269,7 @@ class Application(object):
 			raise RuntimeError('Missing feed URL.')
 		result = {}
 		cursor = request.db().cursor()
-		cursor.execute('INSERT INTO subscriptions (user, url) VALUES (?, ?)', (request.session['userId'], feedUrl))
+		cursor.execute('INSERT INTO subscriptions (user, url) VALUES (%s, %s)', (request.session['userId'], feedUrl))
 		result['affectedRows'] = cursor.rowcount
 		cursor.close()
 		request.db().commit()
@@ -283,7 +285,7 @@ class Application(object):
 			raise RuntimeError('Missing feed URL.')
 		result = {}
 		cursor = request.db().cursor()
-		cursor.execute('DELETE FROM subscriptions WHERE user=? AND url=?', (request.session['userId'], feedUrl))
+		cursor.execute('DELETE FROM subscriptions WHERE user=%s AND url=%s', (request.session['userId'], feedUrl))
 		result['affectedRows'] = cursor.rowcount
 		cursor.close()
 		request.db().commit()
@@ -294,10 +296,9 @@ class Application(object):
 		if not 'userId' in request.session:
 			raise RuntimeError('Must be logged in.')
 		cursor = request.db().cursor()
-		cursor.execute('SELECT id, user, name, url, parent FROM subscriptions WHERE user=? ORDER BY name DESC, url DESC', (request.session['userId'],))
-		result = {'subscriptions': []}
-		for subscription, user, name, feedUrl, parent in cursor:
-			result['subscriptions'].append({'id': subscription, 'user': user, 'name': name, 'feedUrl': feedUrl, 'parent': parent})
+		cursor.execute('SELECT id, user, name, url AS feedUrl, parent FROM subscriptions WHERE user=%s ORDER BY name DESC, url DESC', (request.session['userId'],))
+		columnNames = [d[0] for d in cursor.description]
+		result = {'subscriptions': [dict(zip(columnNames, row)) for row in cursor]}
 		cursor.close()
 		return self.json(request, result)
 
@@ -335,10 +336,11 @@ class Application(object):
 			else:
 				entrySummary = makeHtml(entry.summary_detail)
 			entryPublished = None
-			if entry.published_parsed:
+			if 'published_parsed' in entry and entry.published_parsed:
 				entryPublished = datetime.datetime.fromtimestamp(time.mktime(entry.published_parsed))
-			cursor.execute('INSERT OR REPLACE INTO articles (id, feed, title, summary, link, published) VALUES (?, ?, ?, ?, ?, ?)', (entryId, feedUrl, entryTitle, entrySummary, entryLink, entryPublished))
+			cursor.execute('REPLACE INTO articles (id, feed, title, summary, link, published) VALUES (%s, %s, %s, %s, %s, %s)', (entryId, feedUrl, entryTitle, entrySummary, entryLink, entryPublished))
 		cursor.close()
+		request.db().commit()
 		return self.json(request, {'feedUrl': feedUrl})
 
 	@json
@@ -347,23 +349,66 @@ class Application(object):
 			raise RuntimeError('Must be logged in.')
 		news = {'items': []}
 		cursor = request.db().cursor()
-		# article feed user note
-		cursor.execute('''
-			SELECT articles.id, articles.feed, articles.title, articles.summary, articles.link, statuses.read, statuses.starred, shares.article IS NOT NULL AS isShared, users.username, sharedNote
-			FROM articles
-			LEFT OUTER JOIN statuses ON statuses.user=? AND statuses.article=articles.id
-			LEFT OUTER JOIN subscriptions ON subscriptions.user=? AND subscriptions.url=articles.feed
-			LEFT OUTER JOIN
-				(SELECT shares.article AS sharedArticle, friends.friend AS sharedBy, shares.note as sharedNote FROM shares, friends WHERE shares.user=friends.friend AND friends.user=?)
-				ON sharedArticle=articles.id
-			LEFT OUTER JOIN shares ON shares.article=articles.id AND shares.user=?
-			LEFT OUTER JOIN users ON sharedBy=users.id
-			WHERE (NOT statuses.read OR statuses.read IS NULL) AND (statuses.user=? OR subscriptions.user=? OR sharedArticle IS NOT NULL)
-			ORDER BY published DESC LIMIT 100''',
-			(request.session['userId'],) * 6)
 
-		for articleId, feed, title, summary, link, read, starred, shared, sharedBy, sharedNote in cursor:
-			news['items'].append({'id': articleId, 'feed': feed, 'title': title, 'summary': summary, 'link': link, 'read': bool(read), 'starred': bool(starred), 'shared': bool(shared), 'sharedBy': sharedBy, 'sharedNote': sharedNote})
+		resultLimit = 100
+
+		cursor.execute('''
+			SELECT
+				articles.id AS id,
+				articles.feed AS feed,
+				articles.title AS title,
+				articles.summary AS summary,
+				articles.link AS link,
+				articles.published as published,
+				statuses.isRead AS isRead,
+				statuses.starred AS starred,
+				shares.id IS NOT NULL AS shared,
+				NULL as sharedUser,
+				NULL AS sharedNote
+			FROM subscriptions, articles
+			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.article=articles.id
+			LEFT OUTER JOIN shares ON shares.user=%s AND shares.article=articles.id
+			WHERE (subscriptions.user=%s AND subscriptions.url=articles.feed) AND (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
+			ORDER BY articles.published DESC LIMIT %s
+			''',
+			[request.session['userId']] * 3 + [resultLimit + 1])
+
+		columnNames = [d[0] for d in cursor.description]
+		unreadItems = [dict(zip(columnNames, row)) for row in cursor]
+
+		cursor.execute('''
+			SELECT
+				articles.id AS id,
+				articles.feed AS feed,
+				articles.title AS title,
+				articles.summary AS summary,
+				articles.link AS link,
+				articles.published as published,
+				statuses.isRead AS isRead,
+				statuses.starred AS starred,
+				FALSE AS shared,
+				users.username as sharedBy,
+				shares.note AS sharedNote
+			FROM users, shares, friends, articles
+			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.article=articles.id
+			WHERE (users.id=shares.user AND shares.article=articles.id AND friends.user=%s AND friends.friend=shares.user)
+			ORDER BY articles.published DESC LIMIT %s
+			''', [request.session['userId']] * 2 + [resultLimit + 1])
+		columnNames = [d[0] for d in cursor.description]
+		sharedItems = [dict(zip(columnNames, row)) for row in cursor]
+
+		allItems = []
+		while unreadItems and sharedItems:
+			if unreadItems[0]['published'] < sharedItems[0]['published']:
+				allItems.append(unreadItems.pop(0))
+			else:
+				allItems.append(sharedItems.pop(0))
+		allItems += unreadItems
+		allItems += sharedItems
+
+		news['items'] = allItems[:resultLimit]
+		news['more'] = len(allItems) > resultLimit
+
 		cursor.close()
 		return self.json(request, news)
 
@@ -376,22 +421,22 @@ class Application(object):
 		if not articleId:
 			raise RuntimeError('Missing article.')
 		cursor = request.db().cursor()
-		cursor.execute('SELECT read, starred FROM statuses WHERE article=? AND user=?', (articleId, request.session['userId']))
+		cursor.execute('SELECT isRead, starred FROM statuses WHERE article=%s AND user=%s', (articleId, request.session['userId']))
 		read = False
 		starred = False
 		row = cursor.fetchone()
 		if row:
 			read, starred = row
-		if 'read' in form:
-			read = form.getvalue('read') == 'true'
+		if 'isRead' in form:
+			read = form.getvalue('isRead') == 'true'
 		if 'starred' in form:
 			starred = form.getvalue('starred') == 'true'
 		read = bool(read)
 		starred = bool(starred)
-		cursor.execute('INSERT OR REPLACE INTO statuses (article, user, read, starred) VALUES (?, ?, ?, ?)', (articleId, request.session['userId'], read, starred))
+		cursor.execute('REPLACE INTO statuses (article, user, isRead, starred) VALUES (%s, %s, %s, %s)', (articleId, request.session['userId'], read, starred))
 		cursor.close()
 		request.db().commit()
-		return self.json(request, {'read': read, 'starred': starred, 'form': form.getvalue('read')})
+		return self.json(request, {'isRead': read, 'starred': starred, 'form': form.getvalue('isRead')})
 
 	@json
 	def handle_setShared(self, request):
@@ -405,9 +450,9 @@ class Application(object):
 		cursor = request.db().cursor()
 		share = form.getvalue('share') == 'true'
 		if share:
-			cursor.execute('INSERT INTO shares (article, feed, user, note) VALUES (?, ?, ?, ?)', (articleId, feedUrl, request.session['userId'], None))
+			cursor.execute('INSERT INTO shares (article, feed, user, note) VALUES (%s, %s, %s, %s)', (articleId, feedUrl, request.session['userId'], None))
 		else:
-			cursor.execute('DELETE FROM shares WHERE article=? AND user=?', (articleId, request.session['userId']))
+			cursor.execute('DELETE FROM shares WHERE article=%s AND user=%s', (articleId, request.session['userId']))
 		rows = cursor.rowcount
 		cursor.close()
 		request.db().commit()
@@ -420,10 +465,11 @@ class Application(object):
 		form = request.form()
 		name = form.getvalue('name')
 		cursor = request.db().cursor()
-		cursor.execute('UPDATE users SET username=? WHERE id=?', (name, request.session['userId']))
+		cursor.execute('UPDATE users SET username=%s WHERE id=%s', (name, request.session['userId']))
 		request.session['username'] = name
 		rows = cursor.rowcount
 		cursor.close()
+		request.saveSession()
 		request.db().commit()
 		return self.json(request, {'affectedRows': rows})
 
@@ -436,9 +482,9 @@ class Application(object):
 
 		def importNode(node, parent=None):
 			if node.tag == 'outline':
-				name = node.attrib['title'] if 'title' in node.attrib else None
-				url = node.attrib['xmlUrl'] if 'xmlUrl' in node.attrib else None
-				cursor.execute('INSERT OR REPLACE INTO subscriptions (user, name, url, parent) VALUES (?, ?, ?, ?)', (user, name, url, parent))
+				name = node.attrib['title'].encode('utf-8') if 'title' in node.attrib else None
+				url = node.attrib['xmlUrl'].encode('utf-8') if 'xmlUrl' in node.attrib else None
+				cursor.execute('REPLACE INTO subscriptions (user, name, url, parent) VALUES (%s, %s, %s, %s)', (user, name, url, parent))
 				myId = cursor.lastrowid
 
 				for child in node.getchildren():
@@ -483,7 +529,6 @@ class Application(object):
 	def json(self, request, data):
 		request.data['session'] = request.session
 		request.data['environment'] = request.environment
-		request.saveSession()
 		result = simplejson.dumps(data, default=jsonDefaultHandler)
 		request.startResponse('200 OK', [
 			('Content-Type', 'application/json'),
@@ -521,14 +566,14 @@ application = app.handler
 if __name__ == '__main__':
 	request = Request({}, None)
 	cursor = request.db().cursor()
-	cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session TEXT, name TEXT, value BLOB, UNIQUE (session, name))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, secret TEXT, username TEXT)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity TEXT, UNIQUE(user, identity))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user INTEGER, name TEXT, url TEXT, parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url TEXT PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document TEXT, lastUpdate TIMESTAMP)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id TEXT PRIMARY KEY, feed TEXT, title TEXT, summary TEXT, link TEXT, published TIMESTAMP)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article TEXT, user INTEGER, read BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTOINCREMENT, article TEXT, feed TEXT, user INTEGER, note TEXT, UNIQUE(article, feed, user))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session VARCHAR(16), name VARCHAR(255), value BLOB, UNIQUE (session, name))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTO_INCREMENT, secret TEXT, username TEXT)')
+	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity VARCHAR(512), UNIQUE(user, identity))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(512), url VARCHAR(512), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(512) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')
+	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id VARCHAR(512) PRIMARY KEY, feed VARCHAR(512), title TEXT, summary TEXT, link TEXT, published TIMESTAMP)')
+	cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article VARCHAR(512), user INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTO_INCREMENT, article VARCHAR(512), feed VARCHAR(512), user INTEGER, note TEXT, UNIQUE(article, feed, user))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS friends (user INTEGER, friend INTEGER, UNIQUE(user, friend))')
 	try:
 		request.store().createTables()

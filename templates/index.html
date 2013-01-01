@@ -13,10 +13,16 @@
 		<script type="text/javascript" src="static/openid-selector/js/openid-jquery.js"></script>
 		<script type="text/javascript" src="static/openid-selector/js/openid-en.js"></script>
 		<script type="text/javascript">
+			var gAuthenticated = false;
 			$(document).ready(function() {
 				openid.img_path = "static/openid-selector/images/";
 				openid.init('openid_identifier');
 			});
+		</script>
+		</py:if>
+		<py:if test="'oid' in session">
+		<script type="text/javascript">
+			var gAuthenticated = true;
 		</script>
 		</py:if>
 	</head>
@@ -49,7 +55,8 @@
 			</div>
 			<div id="container">
 				<div id="content">
-					<div style="background: #f88; border: 4px solid #f00; padding: 1em" py:if="defined('error')"><code>${error}</code></div>
+					<div style="background: #f88; border: 4px solid #f00; padding: 1em" py:if="defined('error')"><pre>${error}</pre></div>
+					<div style="background: #f88; border: 4px solid #f00; padding: 1em; display: none" id="error"><div id="error_message"/><pre id="error_traceback"/></div>
 					<div py:if="not 'oid' in session">
 						<h2>Log in</h2>
 						<form action="verify" method="POST" id="openid_form">
