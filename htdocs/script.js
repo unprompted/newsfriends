@@ -8,6 +8,7 @@ var gSelected = -1;
 $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
 	$("#refresh_feeds").click(refreshFeeds);
+	$("#mark_all_read_feeds").click(markAllRead);
 	$("#set_name").click(setName);
 
 	if (gAuthenticated) {
@@ -128,14 +129,33 @@ function addSubscription() {
 	});
 }
 
+function markAllRead() {
+	if (confirm('Really?')) {
+		$.ajax({
+			type: "POST",
+			url: "markAllRead",
+			data: {},
+			dataType: 'json',
+		}).done(function(data) {
+			console.debug(data);
+			loadNews();
+		});
+	}
+}
+
 function refreshFeeds() {
 	$("#articles").empty();
 	$("#feed_message").show();
 	$("#feed_message").text("Loading...");
-	gSubscriptions.forEach(function(subscription) { gSubscriptionsToFetch.push(subscription); });
+	gSubscriptionsToFetch = [];
+	gSubscriptions.forEach(function(subscription) {
+		if (subscription.feedUrl) {
+			gSubscriptionsToFetch.push(subscription);
+		}
+	});
 	gSubscriptionsToFetchCount = gSubscriptionsToFetch.length;
 	gSubscriptionsFetchedCount = 0;
-	gWorkerCount = 16;
+	gWorkerCount = 4;
 	for (var i = gWorkerCount; i > 0; i--) {
 		refreshFeedHandler();
 	}
@@ -149,10 +169,19 @@ function refreshFeedHandler() {
 			url: "fetchFeed",
 			data: { feedUrl: subscription.feedUrl },
 			dataType: 'json',
+			timeout: 15000,
 		}).done(function(data) {
+			if (data.error) {
+				console.debug(data.error);
+				console.debug(data.traceback);
+			}
+		}).fail(function(xhr, status) {
+			console.debug(subscription.feedUrl + " - " + status);
+		}).always(function() {
 			gSubscriptionsFetchedCount++;
 			$("#feed_message").text("Loading..." + gSubscriptionsFetchedCount + " / " + gSubscriptionsToFetchCount);
-		}).always(refreshFeedHandler);
+			refreshFeedHandler();
+		});
 	} else {
 		if (--gWorkerCount == 0) {
 			loadNews();

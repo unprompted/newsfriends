@@ -45,30 +45,32 @@ class FeedCache(object):
 		if row:
 			document = row[0]
 		cursor.close()
-		return document.encode('utf-8')
+		return document.encode('utf-8') if document else None
 
 	def fetch(self, url):
 		cursor = self._db.cursor()
-		lastAttempt = None
-		lastUpdate = None
-		error = None
-		document = None
-		cursor.execute('SELECT lastAttempt, error, lastUpdate, document FROM feeds WHERE url=%s', (url,))
-		row = cursor.fetchone()
-		if row:
-			lastAttempt, error, lastUpdate, document = row
-		now = datetime.datetime.now()
-		if not lastAttempt or now - lastAttempt > datetime.timedelta(minutes=5):
-			lastAttempt = now
-			try:
-				headers = {'User-Agent': 'UnpromptedNews/1.0'}
-				document = unicode(urllib2.urlopen(urllib2.Request(url, None, headers)).read(), 'utf-8')
-				lastUpdate = now
-			except Exception, e:
-				error = str(e)
-		cursor.execute('REPLACE INTO feeds (url, lastAttempt, error, lastUpdate, document) VALUES (%s, %s, %s, %s, %s)', (url, lastAttempt, error, lastUpdate, document))
-		cursor.close()
-		self._db.commit()
+		try:
+			lastAttempt = None
+			lastUpdate = None
+			error = None
+			document = None
+			cursor.execute('SELECT lastAttempt, error, lastUpdate, document FROM feeds WHERE url=%s', (url,))
+			row = cursor.fetchone()
+			if row:
+				lastAttempt, error, lastUpdate, document = row
+			now = datetime.datetime.now()
+			if not lastAttempt or now - lastAttempt > datetime.timedelta(minutes=5):
+				lastAttempt = now
+				try:
+					headers = {'User-Agent': 'UnpromptedNews/1.0'}
+					document = unicode(urllib2.urlopen(urllib2.Request(url, None, headers)).read(), 'utf-8')
+					lastUpdate = now
+				except Exception, e:
+					error = str(e)
+			cursor.execute('REPLACE INTO feeds (url, lastAttempt, error, lastUpdate, document) VALUES (%s, %s, %s, %s, %s)', (url, lastAttempt, error, lastUpdate, document))
+		finally:
+			cursor.close()
+			self._db.commit()
 		return {'lastAttempt': lastAttempt, 'lastUpdate': lastUpdate}
 
 class Request(object):
@@ -115,7 +117,7 @@ class Request(object):
 			cursor = self._db.cursor()
 			cursor.execute('SET NAMES utf8')
 			cursor.execute('SET CHARACTER SET utf8')
-			cursor.execute('SET character_Set_connection=utf8')
+			cursor.execute('SET character_set_connection=utf8')
 			cursor.close()
 		return self._db
 
@@ -327,21 +329,44 @@ class Application(object):
 		document = feedCache.get(feedUrl)
 		feed = feedparser.parse(document)
 		cursor = request.db().cursor()
-		for entry in feed.entries:
-			entryId = entry.id
-			entryLink = entry.link if 'link' in entry else None
-			entryTitle = makeHtml(entry.title_detail)
-			if 'content' in entry and entry.content:
-				entrySummary = '\n'.join(makeHtml(content) for content in entry.content)
-			else:
-				entrySummary = makeHtml(entry.summary_detail)
-			entryPublished = None
-			if 'published_parsed' in entry and entry.published_parsed:
-				entryPublished = datetime.datetime.fromtimestamp(time.mktime(entry.published_parsed))
-			cursor.execute('REPLACE INTO articles (id, feed, title, summary, link, published) VALUES (%s, %s, %s, %s, %s, %s)', (entryId, feedUrl, entryTitle, entrySummary, entryLink, entryPublished))
-		cursor.close()
-		request.db().commit()
+		try:
+			for entry in feed.entries:
+				entryId = entry.id if 'id' in entry else None
+				entryLink = entry.link if 'link' in entry else None
+				entryId = entryId or entryLink
+				if entryId:
+					entryTitle = makeHtml(entry.title_detail)
+					if 'content' in entry and entry.content:
+						entrySummary = '\n'.join(makeHtml(content) for content in entry.content)
+					elif 'summary_detail' in entry:
+						entrySummary = makeHtml(entry.summary_detail)
+					else:
+						entrySummary = ''
+					entryPublished = None
+					if 'published_parsed' in entry and entry.published_parsed:
+						entryPublished = datetime.datetime.fromtimestamp(time.mktime(entry.published_parsed))
+					cursor.execute('REPLACE INTO articles (id, feed, title, summary, link, published) VALUES (%s, %s, %s, %s, %s, %s)', (entryId, feedUrl, entryTitle, entrySummary, entryLink, entryPublished))
+		finally:
+			cursor.close()
+			request.db().commit()
 		return self.json(request, {'feedUrl': feedUrl})
+
+	@json
+	def handle_markAllRead(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		cursor = request.db().cursor()
+		cursor.execute('''
+			REPLACE INTO statuses (article, user, isRead, starred)
+			SELECT articles.id, %s, TRUE, statuses.starred
+			FROM subscriptions, articles
+			LEFT OUTER JOIN statuses ON statuses.user=%s and statuses.article=articles.id
+			WHERE (subscriptions.user=%s AND subscriptions.url=articles.feed) AND (NOT statuses.isRead OR statuses.isRead IS NULL)
+			''',
+			[request.session['userId']] * 3)
+		rows = cursor.rowcount
+		request.db().commit()
+		return self.json(request, {'affectedRows': rows})
 
 	@json
 	def handle_getNews(self, request):
@@ -391,7 +416,7 @@ class Application(object):
 				shares.note AS sharedNote
 			FROM users, shares, friends, articles
 			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.article=articles.id
-			WHERE (users.id=shares.user AND shares.article=articles.id AND friends.user=%s AND friends.friend=shares.user)
+			WHERE (users.id=shares.user AND shares.article=articles.id AND friends.user=%s AND friends.friend=shares.user) AND (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
 			ORDER BY articles.published DESC LIMIT %s
 			''', [request.session['userId']] * 2 + [resultLimit + 1])
 		columnNames = [d[0] for d in cursor.description]
@@ -568,12 +593,12 @@ if __name__ == '__main__':
 	cursor = request.db().cursor()
 	cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session VARCHAR(16), name VARCHAR(255), value BLOB, UNIQUE (session, name))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTO_INCREMENT, secret TEXT, username TEXT)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity VARCHAR(512), UNIQUE(user, identity))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(512), url VARCHAR(512), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(512) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id VARCHAR(512) PRIMARY KEY, feed VARCHAR(512), title TEXT, summary TEXT, link TEXT, published TIMESTAMP)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article VARCHAR(512), user INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTO_INCREMENT, article VARCHAR(512), feed VARCHAR(512), user INTEGER, note TEXT, UNIQUE(article, feed, user))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity VARCHAR(255), UNIQUE(user, identity))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(255), url VARCHAR(255), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(255) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')
+	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id VARCHAR(255) PRIMARY KEY, feed VARCHAR(255), title TEXT, summary TEXT, link TEXT, published TIMESTAMP)')
+	cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article VARCHAR(255), user INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
+	cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTO_INCREMENT, article VARCHAR(255), feed VARCHAR(255), user INTEGER, note TEXT, UNIQUE(article, feed, user))')
 	cursor.execute('CREATE TABLE IF NOT EXISTS friends (user INTEGER, friend INTEGER, UNIQUE(user, friend))')
 	try:
 		request.store().createTables()
