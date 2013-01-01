@@ -16,6 +16,7 @@ import urllib2
 import datetime
 import feedparser
 import time
+from xml.etree import ElementTree as ET
 
 databaseFilename = os.path.join(os.getcwd(), os.path.dirname(__file__), 'data', 'db.sqlite')
 
@@ -53,6 +54,7 @@ class FeedCache(object):
 		row = cursor.fetchone()
 		if row:
 			lastAttempt, error, lastUpdate, document = row
+		cursor.close()
 		now = datetime.datetime.now()
 		if not lastAttempt or now - lastAttempt > datetime.timedelta(minutes=5):
 			lastAttempt = now
@@ -292,10 +294,10 @@ class Application(object):
 		if not 'userId' in request.session:
 			raise RuntimeError('Must be logged in.')
 		cursor = request.db().cursor()
-		cursor.execute('SELECT user, name, url, parent FROM subscriptions WHERE user=? ORDER BY name DESC, url DESC', (request.session['userId'],))
+		cursor.execute('SELECT id, user, name, url, parent FROM subscriptions WHERE user=? ORDER BY name DESC, url DESC', (request.session['userId'],))
 		result = {'subscriptions': []}
-		for user, name, feedUrl, parent in cursor:
-			result['subscriptions'].append({'user': user, 'name': name, 'feedUrl': feedUrl, 'parent': parent})
+		for subscription, user, name, feedUrl, parent in cursor:
+			result['subscriptions'].append({'id': subscription, 'user': user, 'name': name, 'feedUrl': feedUrl, 'parent': parent})
 		cursor.close()
 		return self.json(request, result)
 
@@ -424,6 +426,33 @@ class Application(object):
 		cursor.close()
 		request.db().commit()
 		return self.json(request, {'affectedRows': rows})
+
+	def handle_loadOpml(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		user = request.session['userId']
+
+		cursor = request.db().cursor()
+
+		def importNode(node, parent=None):
+			if node.tag == 'outline':
+				name = node.attrib['title'] if 'title' in node.attrib else None
+				url = node.attrib['xmlUrl'] if 'xmlUrl' in node.attrib else None
+				cursor.execute('INSERT OR REPLACE INTO subscriptions (user, name, url, parent) VALUES (?, ?, ?, ?)', (user, name, url, parent))
+				myId = cursor.lastrowid
+
+				for child in node.getchildren():
+					importNode(child, myId)
+
+		form = request.form()
+		opml = form['file'].file
+		tree = ET.parse(opml)
+		body = tree.getroot().find('body')
+		for node in body.getchildren():
+			importNode(node)
+		cursor.close()
+		request.db().commit()
+		return self.redirect(request, request.environment['SCRIPT_NAME'])
 
 	def handleError(self, request):
 		return self.render(request, 'index.html')

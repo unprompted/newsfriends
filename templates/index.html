@@ -3,13 +3,11 @@
 	xmlns:py="http://genshi.edgewall.org/">
 	<?python from genshi.core import Markup ?>
 	<head>
-		<title>News for Cory</title>
+		<title>News Friends</title>
 		<base href="${environment.SCRIPT_NAME}/"/>
 		<link type="text/css" rel="stylesheet" href="static/style.css" />
 		<script type="text/javascript" src="static/jquery.min.js"></script>
-
 		<script type="text/javascript" src="static/script.js"></script>
-
 		<py:if test="not 'oid' in session">
 		<link type="text/css" rel="stylesheet" href="static/openid-selector/css/openid.css" />
 		<script type="text/javascript" src="static/openid-selector/js/openid-jquery.js"></script>
@@ -23,63 +21,76 @@
 		</py:if>
 	</head>
 	<body>
-		<h1>News for Cory</h1>
-		<div style="background: #f88; border: 4px solid #f00; padding: 1em" py:if="defined('error')"><pre>${error}</pre></div>
-		<div py:if="not 'oid' in session">
-			<h2>Log in</h2>
-			<form action="verify" method="POST" id="openid_form">
-				<input type="hidden" name="action" value="verify" />
-				<fieldset>
-					<legend>Sign-in or Create New Account</legend>
-					<div id="openid_choice">
-						<p>Please click your account provider:</p>
-						<div id="openid_btns"></div>
+		<div id="heading">News Friends</div>
+		<div id="main">
+			<div id="sidebar">
+				<div py:if="'oid' in session">
+					<h2>Welcome, ${session.username if session.username else 'Anonymous'}.</h2>
+					<div><a href="${environment.SCRIPT_NAME}/logout">Log out</a>.</div>
+					<div>
+						<input type="text" id="name" value="${session.username}"/>
+						<input type="submit" id="set_name" value="Set Name"/>
 					</div>
-					<div id="openid_input_area">
-						<input id="openid_identifier" name="openid_identifier" type="text" value="http://" />
-						<input id="openid_submit" type="submit" value="Sign-In"/>
+					<div>
+						<h2>Subscriptions</h2>
+						<div>
+							<form method="POST" enctype="multipart/form-data" action="loadOpml">
+								<input type="file" name="file"/>
+								<input type="submit" name="submit" value="Load OPML"/>
+							</form>
+							<div>
+								<input type="text" name="feed_url" id="feed_url" style="width: 200px"/>
+								<input type="submit" name="submit" id="add_subscription" value="Add"/>
+							</div>
+							<ul id="subscriptions"/>
+						</div>
 					</div>
-					<noscript>
-						<p>OpenID is service that allows you to log-on to many different websites using a single indentity.
-						Find out <a href="http://openid.net/what/">more about OpenID</a> and <a href="http://openid.net/get/">how to get an OpenID enabled account</a>.</p>
-					</noscript>
-				</fieldset>
-			</form>
-		</div>
-		<div py:if="'oid' in session">
-			<h2>Welcome</h2>
-			<div>Your OpenID is: <code>${session.oid}</code>.  <a href="${environment.SCRIPT_NAME}/logout">Log out</a>.</div>
-			<div>
-				<input type="text" id="name" value="${session.username}"/>
-				<input type="submit" id="set_name" value="Set Name"/>
-			</div>
-			<h2>Subscriptions</h2>
-			<div>
-				<div>
-					<input type="text" name="feed_url" id="feed_url" style="width: 256px"/>
-					<input type="submit" name="submit" id="add_subscription" value="Add"/>
 				</div>
-				<ul id="subscriptions"/>
 			</div>
-		</div>
-		<div py:if="False and session">
-			<h2>Session</h2>
-			<ul>
-				<li py:for="k, v in session.items()"><b>${k}</b>: ${v}</li>
-			</ul>
-		</div>
-		<div py:if="False and defined('environment')">
-			<h2>Environment</h2>
-			<ul>
-				<li py:for="k, v in environment.items()"><b>${k}</b>: ${v}</li>
-			</ul>
-		</div>
-		<div>
-			<h2>Feeds</h2>
-			<div id="feeds"/>
-			<input type="submit" id="refresh_feeds" value="Refresh"/>
-			<div id="feed_message"/>
-			<div id="articles"/>
+			<div id="container">
+				<div id="content">
+					<div style="background: #f88; border: 4px solid #f00; padding: 1em" py:if="defined('error')"><code>${error}</code></div>
+					<div py:if="not 'oid' in session">
+						<h2>Log in</h2>
+						<form action="verify" method="POST" id="openid_form">
+							<input type="hidden" name="action" value="verify" />
+							<fieldset>
+								<legend>Sign-in or Create New Account</legend>
+								<div id="openid_choice">
+									<p>Please click your account provider:</p>
+									<div id="openid_btns"></div>
+								</div>
+								<div id="openid_input_area">
+									<input id="openid_identifier" name="openid_identifier" type="text" value="http://" />
+									<input id="openid_submit" type="submit" value="Sign-In"/>
+								</div>
+								<noscript>
+									<p>OpenID is service that allows you to log-on to many different websites using a single indentity.
+									Find out <a href="http://openid.net/what/">more about OpenID</a> and <a href="http://openid.net/get/">how to get an OpenID enabled account</a>.</p>
+								</noscript>
+							</fieldset>
+						</form>
+					</div>
+					<div py:if="'oid' in session">
+						<h2>Feeds</h2>
+						<input type="submit" id="refresh_feeds" value="Refresh"/>
+						<div id="feed_message"/>
+						<div id="articles"/>
+					</div>
+					<div py:if="False and session">
+						<h2>Session</h2>
+						<ul>
+							<li py:for="k, v in session.items()"><b>${k}</b>: ${v}</li>
+						</ul>
+					</div>
+					<div py:if="False and defined('environment')">
+						<h2>Environment</h2>
+						<ul>
+							<li py:for="k, v in environment.items()"><b>${k}</b>: ${v}</li>
+						</ul>
+					</div>
+				</div>
+			</div>
 		</div>
 	</body>
 </html>

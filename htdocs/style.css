@@ -1,6 +1,45 @@
+body {
+	margin: 0;
+	padding: 0;
+	background-color: #ccc;
+}
+
+#heading {
+	padding: 0.25em;
+	font-size: xx-large;
+}
+
+#main {
+	margin: 0;
+	padding: 0;
+	background-color: #ddd;
+}
+
+#sidebar {
+	margin: 0;
+	padding: 8px;
+	float: left;
+	width: 240px;
+	background-color: #888;
+	word-wrap: break-word;
+}
+
+#container {
+	margin-left: 256px;
+}
+
+#content {
+	margin: 0;
+	padding: 8px;
+	height: 100%;
+	background-color: #222;
+	color: #fff;
+}
+
 .article {
 	border: 1px solid black;
-	background-color: #eef;
+	background-color: #ccf;
+	color: #000;
 }
 
 .article.selected {

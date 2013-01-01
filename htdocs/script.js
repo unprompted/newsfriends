@@ -37,14 +37,18 @@ $(document).keypress(function(event) {
 
 	if (lastSelected != gSelected) {
 		$("#articles").children().eq(lastSelected).removeClass('selected');
-		var toShow = $("#articles").children().eq(gSelected);
-		toShow.addClass('selected');
-		toShow.trigger('markRead');
+		if (gSelected >= 0 && gSelected < $("#articles").children().length) {
+			var toShow = $("#articles").children().eq(gSelected);
+			toShow.addClass('selected');
+			toShow.trigger('markRead');
+			toShow.get(0).scrollIntoView(true);
+		}
 	}
 });
 
 function makeSubscriptionNode(subscription) {
 	var li = document.createElement('li');
+	$(li).attr('name', "subscription" + subscription.id);
 	$(li).text(subscription.name || subscription.feedUrl);
 	var button = document.createElement('input');
 	$(button).attr('type', 'button');
@@ -60,7 +64,22 @@ function makeSubscriptionNode(subscription) {
 		});
 	});
 	$(li).append(button);
-	$("#subscriptions").append(li);
+
+	var children = [];
+	gSubscriptions.forEach(function(other) {
+		if (other.parent == subscription.id) {
+			children.push(other);
+		}
+	});
+	if (children.length) {
+		var ul = document.createElement('ul');
+		$(li).append(ul);
+		children.forEach(function(child) {
+			$(ul).append(makeSubscriptionNode(child));
+		});
+	}
+
+	return li;
 }
 
 function loadSubscriptions() {
@@ -75,7 +94,9 @@ function loadSubscriptions() {
 		gSubscriptions = data['subscriptions'];
 		$("#subscriptions").empty();
 		data['subscriptions'].forEach(function(subscription) {
-			$("#subscriptions").append(makeSubscriptionNode(subscription));
+			if (subscription.parent == null) {
+				$("#subscriptions").append(makeSubscriptionNode(subscription));
+			}
 		});
 	});
 }
@@ -113,7 +134,7 @@ function refreshFeeds() {
 	gSubscriptions.forEach(function(subscription) { gSubscriptionsToFetch.push(subscription); });
 	gSubscriptionsToFetchCount = gSubscriptionsToFetch.length;
 	gSubscriptionsFetchedCount = 0;
-	gWorkerCount = 4;
+	gWorkerCount = 16;
 	for (var i = gWorkerCount; i > 0; i--) {
 		refreshFeedHandler();
 	}
@@ -144,6 +165,7 @@ function loadNews() {
 		url: "getNews",
 		data: {},
 		dataType: 'json',
+		timeout: 15000,
 	}).done(function(data) {
 		gSelected = -1;
 		$("#articles").empty();
