@@ -6,7 +6,6 @@ import cgi
 from openid.consumer import consumer
 from openid.store.sqlstore import MySQLStore
 from openid.cryptutil import randomString
-import cgitb; cgitb.enable()
 from Cookie import SimpleCookie
 from genshi.template import TemplateLoader
 import pickle
@@ -18,6 +17,8 @@ import feedparser
 import time
 from xml.etree import ElementTree as ET
 import base64
+import StringIO
+import sys
 
 dbArgs = {'user': 'news', 'passwd': 'news', 'db': 'news'}
 
@@ -63,7 +64,7 @@ class FeedCache(object):
 				lastAttempt = now
 				try:
 					headers = {'User-Agent': 'UnpromptedNews/1.0'}
-					document = unicode(urllib2.urlopen(urllib2.Request(url, None, headers)).read(), 'utf-8')
+					document = unicode(urllib2.urlopen(urllib2.Request(url, None, headers), timeout=15).read(), 'utf-8')
 					lastUpdate = now
 				except Exception, e:
 					error = str(e)
@@ -308,8 +309,6 @@ class Application(object):
 	def handle_fetchFeed(self, request):
 		form = request.form()
 		feedUrl = form.getvalue('feedUrl')
-		if not 'userId' in request.session:
-			raise RuntimeError('Must be logged in.')
 		if not feedUrl:
 			raise RuntimeError('Missing feed URL.')
 		feedCache = FeedCache(request.db())
@@ -327,7 +326,7 @@ class Application(object):
 				return cgi.escape(detail.value)
 
 		document = feedCache.get(feedUrl)
-		feed = feedparser.parse(document)
+		feed = feedparser.parse(StringIO.StringIO(document))
 		cursor = request.db().cursor()
 		try:
 			for entry in feed.entries:
@@ -589,20 +588,33 @@ app = Application()
 application = app.handler
 
 if __name__ == '__main__':
-	request = Request({}, None)
-	cursor = request.db().cursor()
-	cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session VARCHAR(16), name VARCHAR(255), value BLOB, UNIQUE (session, name))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTO_INCREMENT, secret TEXT, username TEXT)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity VARCHAR(255), UNIQUE(user, identity))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(255), url VARCHAR(255), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(255) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS articles (id VARCHAR(255) PRIMARY KEY, feed VARCHAR(255), title TEXT, summary TEXT, link TEXT, published TIMESTAMP)')
-	cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article VARCHAR(255), user INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTO_INCREMENT, article VARCHAR(255), feed VARCHAR(255), user INTEGER, note TEXT, UNIQUE(article, feed, user))')
-	cursor.execute('CREATE TABLE IF NOT EXISTS friends (user INTEGER, friend INTEGER, UNIQUE(user, friend))')
-	try:
-		request.store().createTables()
-	except:
-		pass
-	request.store().cleanup()
-	request.db().commit()
+	if 'fetch' in sys.argv:
+		def startResponse(result, headers):
+			pass
+		request = Request({}, startResponse)
+		cursor = request.db().cursor()
+		cursor.execute('SELECT url FROM feeds')
+		urls = [row[0] for row in cursor]
+		cursor.close()
+
+		for url in urls:
+			request = Request({'QUERY_STRING': 'feedUrl=' + url, 'wsgi.input': ''}, startResponse)
+			print app.handle_fetchFeed(request)
+	else:
+		request = Request({}, None)
+		cursor = request.db().cursor()
+		cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session VARCHAR(16), name VARCHAR(255), value BLOB, UNIQUE (session, name))')
+		cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTO_INCREMENT, secret TEXT, username TEXT)')
+		cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity VARCHAR(255), UNIQUE(user, identity))')
+		cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(255), url VARCHAR(255), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
+		cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(255) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')
+		cursor.execute('CREATE TABLE IF NOT EXISTS articles (id VARCHAR(255) PRIMARY KEY, feed VARCHAR(255), title TEXT, summary TEXT, link TEXT, published TIMESTAMP)')
+		cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article VARCHAR(255), user INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
+		cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTO_INCREMENT, article VARCHAR(255), feed VARCHAR(255), user INTEGER, note TEXT, UNIQUE(article, feed, user))')
+		cursor.execute('CREATE TABLE IF NOT EXISTS friends (user INTEGER, friend INTEGER, UNIQUE(user, friend))')
+		try:
+			request.store().createTables()
+		except:
+			pass
+		request.store().cleanup()
+		request.db().commit()

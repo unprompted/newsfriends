@@ -169,7 +169,6 @@ function refreshFeedHandler() {
 			url: "fetchFeed",
 			data: { feedUrl: subscription.feedUrl },
 			dataType: 'json',
-			timeout: 15000,
 		}).done(function(data) {
 			if (data.error) {
 				console.debug(data.error);
