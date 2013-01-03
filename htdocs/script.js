@@ -238,9 +238,11 @@ function makeEntryNode(entry) {
 	$(expand).append(summaryDiv);
 	var readButton = $('<input type="button"></input>');
 	var starredButton = $('<input type="button"></input>');
+	var shareNote = $('<input type="text"></input>');
 	var shareButton = $('<input type="button"></input>');
 	$(expand).append(readButton);
 	$(expand).append(starredButton);
+	$(expand).append(shareNote);
 	$(expand).append(shareButton);
 
 	function updateReadButton(entry, readButton) {
@@ -278,7 +280,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'isRead': true},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'isRead': true},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -286,7 +288,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'starred': !entry.starred},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'starred': !entry.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -294,7 +296,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'isRead': !entry.isRead},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'isRead': !entry.isRead},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -302,7 +304,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'starred': !entry.starred},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'starred': !entry.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -310,7 +312,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setShared",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': !entry.shared},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'share': !entry.shared, 'note': $(shareNote).val()},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});

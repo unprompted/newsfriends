@@ -360,10 +360,10 @@ class Application(object):
 			raise RuntimeError('Must be logged in.')
 		cursor = request.db().cursor()
 		cursor.execute('''
-			REPLACE INTO statuses (article, user, isRead, starred)
-			SELECT articles.id, %s, TRUE, statuses.starred
+			REPLACE INTO statuses (feed, article, user, share, isRead, starred)
+			SELECT articles.feed, articles.id, %s, NULL, TRUE, statuses.starred
 			FROM subscriptions, articles
-			LEFT OUTER JOIN statuses ON statuses.user=%s and statuses.article=articles.id
+			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id
 			WHERE (subscriptions.user=%s AND subscriptions.url=articles.feed) AND (NOT statuses.isRead OR statuses.isRead IS NULL)
 			''',
 			[request.session['userId']] * 3)
@@ -387,15 +387,16 @@ class Application(object):
 				articles.title AS title,
 				articles.summary AS summary,
 				articles.link AS link,
-				articles.published as published,
+				articles.published AS published,
 				statuses.isRead AS isRead,
 				statuses.starred AS starred,
 				shares.id IS NOT NULL AS shared,
-				NULL as sharedUser,
+				NULL AS share,
+				NULL AS sharedUser,
 				NULL AS sharedNote
 			FROM subscriptions, articles
-			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.article=articles.id
-			LEFT OUTER JOIN shares ON shares.user=%s AND shares.article=articles.id
+			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share IS NULL
+			LEFT OUTER JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
 			WHERE (subscriptions.user=%s AND subscriptions.url=articles.feed) AND (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
 			ORDER BY articles.published DESC LIMIT %s
 			''',
@@ -411,15 +412,19 @@ class Application(object):
 				articles.title AS title,
 				articles.summary AS summary,
 				articles.link AS link,
-				articles.published as published,
+				articles.published AS published,
 				statuses.isRead AS isRead,
 				statuses.starred AS starred,
 				FALSE AS shared,
-				users.username as sharedBy,
+				shares.id AS share,
+				users.username AS sharedBy,
 				shares.note AS sharedNote
-			FROM users, shares, friends, articles
-			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.article=articles.id
-			WHERE (users.id=shares.user AND shares.article=articles.id AND friends.user=%s AND friends.friend=shares.user) AND (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
+			FROM articles
+			JOIN shares ON shares.feed=articles.feed AND shares.article=articles.id
+			JOIN friends ON friends.user=%s AND friends.friend=shares.user
+			JOIN users ON users.id=shares.user
+			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
+			WHERE (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
 			ORDER BY articles.published DESC LIMIT %s
 			''', [request.session['userId']] * 2 + [resultLimit + 1])
 		columnNames = [d[0] for d in cursor.description]
@@ -450,8 +455,12 @@ class Application(object):
 		articleId = form.getvalue('article')
 		if not articleId:
 			raise RuntimeError('Missing article.')
+		feedUrl = form.getvalue('feed')
+		if not feedUrl:
+			raise RuntimeError('Missing feed.')
+		shareId = form.getvalue('share')
 		cursor = request.db().cursor()
-		cursor.execute('SELECT isRead, starred FROM statuses WHERE article=%s AND user=%s', (articleId, request.session['userId']))
+		cursor.execute('SELECT isRead, starred FROM statuses WHERE feed=%s AND article=%s AND share=%s AND user=%s', (feedUrl, articleId, shareId, request.session['userId']))
 		read = False
 		starred = False
 		row = cursor.fetchone()
@@ -463,10 +472,10 @@ class Application(object):
 			starred = form.getvalue('starred') == 'true'
 		read = bool(read)
 		starred = bool(starred)
-		cursor.execute('REPLACE INTO statuses (article, user, isRead, starred) VALUES (%s, %s, %s, %s)', (articleId, request.session['userId'], read, starred))
+		cursor.execute('REPLACE INTO statuses (feed, article, share, user, isRead, starred) VALUES (%s, %s, %s, %s, %s, %s)', (feedUrl, articleId, shareId, request.session['userId'], read, starred))
 		cursor.close()
 		request.db().commit()
-		return self.json(request, {'isRead': read, 'starred': starred, 'form': form.getvalue('isRead')})
+		return self.json(request, {'isRead': read, 'starred': starred})
 
 	@json
 	def handle_setShared(self, request):
@@ -479,8 +488,9 @@ class Application(object):
 		feedUrl = form.getvalue('feed')
 		cursor = request.db().cursor()
 		share = form.getvalue('share') == 'true'
+		note = form.getvalue('note', '')
 		if share:
-			cursor.execute('INSERT INTO shares (article, feed, user, note) VALUES (%s, %s, %s, %s)', (articleId, feedUrl, request.session['userId'], None))
+			cursor.execute('INSERT INTO shares (article, feed, user, note) VALUES (%s, %s, %s, %s)', (articleId, feedUrl, request.session['userId'], note))
 		else:
 			cursor.execute('DELETE FROM shares WHERE article=%s AND user=%s', (articleId, request.session['userId']))
 		rows = cursor.rowcount
@@ -642,7 +652,7 @@ if __name__ == '__main__':
 		cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(255), url VARCHAR(255), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(255) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')
 		cursor.execute('CREATE TABLE IF NOT EXISTS articles (id VARCHAR(255) PRIMARY KEY, feed VARCHAR(255), title TEXT, summary TEXT, link TEXT, published TIMESTAMP)')
-		cursor.execute('CREATE TABLE IF NOT EXISTS statuses (article VARCHAR(255), user INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(article, user))')
+		cursor.execute('CREATE TABLE IF NOT EXISTS statuses (feed VARCHAR(255), article VARCHAR(255), user INTEGER, share INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(feed, article, user, share))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTO_INCREMENT, article VARCHAR(255), feed VARCHAR(255), user INTEGER, note TEXT, UNIQUE(article, feed, user))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS friends (user INTEGER, friend INTEGER, UNIQUE(user, friend))')
 		try:
