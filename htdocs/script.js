@@ -18,33 +18,35 @@ $(document).ready(function() {
 });
 
 $(document).keypress(function(event) {
-	var character = String.fromCharCode(event.keyCode);
-	var lastSelected = gSelected;
-	if (character == 'j') {
-		if (gSelected == -1) {
-			gSelected = 0;
-		} else if (gSelected >= 0 && gSelected < $("#articles").children().length - 1) {
-			gSelected++;
+	if (event.target.tagName != 'TEXTAREA' && event.target.tagName != 'INPUT' && event.target.tagName != 'SELECT') {
+		var character = String.fromCharCode(event.keyCode);
+		var lastSelected = gSelected;
+		if (character == 'j') {
+			if (gSelected == -1) {
+				gSelected = 0;
+			} else if (gSelected >= 0 && gSelected < $("#articles").children().length - 1) {
+				gSelected++;
+			}
+		} else if (character == 'k') {
+			if (gSelected == -1) {
+				gSelected = $("#articles").children().length - 1;
+			} else if (gSelected > 0 && gSelected < $("#articles").children().length) {
+				gSelected--;
+			}
+		} else if (character == 'r') {
+			refreshFeeds();
+		} else if (character == 's') {
+			$("#articles").children().eq(gSelected).trigger('toggleStarred');
 		}
-	} else if (character == 'k') {
-		if (gSelected == -1) {
-			gSelected = $("#articles").children().length - 1;
-		} else if (gSelected > 0 && gSelected < $("#articles").children().length) {
-			gSelected--;
-		}
-	} else if (character == 'r') {
-		refreshFeeds();
-	} else if (character == 's') {
-		$("#articles").children().eq(gSelected).trigger('toggleStarred');
-	}
 
-	if (lastSelected != gSelected) {
-		$("#articles").children().eq(lastSelected).removeClass('selected');
-		if (gSelected >= 0 && gSelected < $("#articles").children().length) {
-			var toShow = $("#articles").children().eq(gSelected);
-			toShow.addClass('selected');
-			toShow.trigger('markRead');
-			toShow.get(0).scrollIntoView(true);
+		if (lastSelected != gSelected) {
+			$("#articles").children().eq(lastSelected).removeClass('selected');
+			if (gSelected >= 0 && gSelected < $("#articles").children().length) {
+				var toShow = $("#articles").children().eq(gSelected);
+				toShow.addClass('selected');
+				toShow.trigger('markRead');
+				toShow.get(0).scrollIntoView(true);
+			}
 		}
 	}
 });
@@ -185,6 +187,7 @@ function loadNews() {
 		dataType: 'json',
 		timeout: 15000,
 	}).done(function(data) {
+		console.debug(data);
 		if (data.error) {
 			$("#error_message").text(data.error);
 			$("#error_traceback").text(data.traceback);
@@ -307,7 +310,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'isRead': true},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'isRead': true},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -315,7 +318,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'starred': !entry.starred},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'starred': !entry.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -323,7 +326,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'isRead': !entry.isRead},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'isRead': !entry.isRead},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -331,7 +334,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'starred': !entry.starred},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'starred': !entry.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -339,7 +342,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setShared",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.share, 'share': !entry.shared, 'note': $(shareNote).val()},
+			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'share': !entry.shared, 'note': $(shareNote).val()},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
