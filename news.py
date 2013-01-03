@@ -361,7 +361,7 @@ class Application(object):
 		cursor = request.db().cursor()
 		cursor.execute('''
 			REPLACE INTO statuses (feed, article, user, share, isRead, starred)
-			SELECT articles.feed, articles.id, %s, NULL, TRUE, statuses.starred
+			SELECT articles.feed, articles.id, %s, -1, TRUE, statuses.starred
 			FROM subscriptions, articles
 			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id
 			WHERE (subscriptions.user=%s AND subscriptions.url=articles.feed) AND (NOT statuses.isRead OR statuses.isRead IS NULL)
@@ -391,11 +391,11 @@ class Application(object):
 				statuses.isRead AS isRead,
 				statuses.starred AS starred,
 				shares.id IS NOT NULL AS shared,
-				NULL AS share,
+				shares.id AS share,
 				NULL AS sharedUser,
 				NULL AS sharedNote
 			FROM subscriptions, articles
-			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share IS NULL
+			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=-1
 			LEFT OUTER JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
 			WHERE (subscriptions.user=%s AND subscriptions.url=articles.feed) AND (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
 			ORDER BY articles.published DESC LIMIT %s
@@ -440,12 +440,39 @@ class Application(object):
 		allItems += sharedItems
 
 		news['items'] = allItems[:resultLimit]
+		for newsItem in news['items']:
+			if 'share' in newsItem and newsItem['share']:
+				newsItem['comments'] = self.getComments(cursor, newsItem['share'])
 		news['more'] = len(allItems) > resultLimit
 
 		cursor.execute('UPDATE users SET lastRefresh=NOW() WHERE id=%s', (request.session['userId'],))
 		cursor.close()
 		request.db().commit()
 		return self.json(request, news)
+
+	def getComments(self, cursor, share):
+		cursor.execute('SELECT users.username, comments.comment, comments.time FROM comments, users WHERE comments.share=%s AND comments.user=users.id', (share,))
+		columnNames = [d[0] for d in cursor.description]
+		return [dict(zip(columnNames, row)) for row in cursor]
+
+	@json
+	def handle_addComment(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		form = request.form()
+		shareId = form.getvalue('share')
+		if not shareId:
+			raise RuntimeError('Missing share.')
+		comment = form.getvalue('comment')
+		if not comment:
+			raise RuntimeError('Missing comment.')
+		cursor = request.db().cursor()
+		cursor.execute('INSERT INTO comments (user, share, comment, time) VALUES (%s, %s, %s, %s)', (request.session['userId'], shareId, comment, datetime.datetime.now()))
+		rows = cursor.rowcount
+		cursor.execute('UPDATE statuses SET isRead=FALSE WHERE share=%s AND isRead=TRUE', (shareId,))
+		cursor.close()
+		request.db().commit()
+		return self.json(request, {'affectedRows': rows})
 
 	@json
 	def handle_setStatus(self, request):
@@ -458,7 +485,7 @@ class Application(object):
 		feedUrl = form.getvalue('feed')
 		if not feedUrl:
 			raise RuntimeError('Missing feed.')
-		shareId = form.getvalue('share')
+		shareId = form.getvalue('share') or -1
 		cursor = request.db().cursor()
 		cursor.execute('SELECT isRead, starred FROM statuses WHERE feed=%s AND article=%s AND share=%s AND user=%s', (feedUrl, articleId, shareId, request.session['userId']))
 		read = False
@@ -472,7 +499,7 @@ class Application(object):
 			starred = form.getvalue('starred') == 'true'
 		read = bool(read)
 		starred = bool(starred)
-		cursor.execute('REPLACE INTO statuses (feed, article, share, user, isRead, starred) VALUES (%s, %s, %s, %s, %s, %s)', (feedUrl, articleId, shareId, request.session['userId'], read, starred))
+		cursor.execute('REPLACE INTO statuses (feed, article, share, user, isRead, starred) VALUES (%s, %s, %s, %s, %s, %s)', (feedUrl, articleId, shareId or -1, request.session['userId'], read, starred))
 		cursor.close()
 		request.db().commit()
 		return self.json(request, {'isRead': read, 'starred': starred})
@@ -655,6 +682,7 @@ if __name__ == '__main__':
 		cursor.execute('CREATE TABLE IF NOT EXISTS statuses (feed VARCHAR(255), article VARCHAR(255), user INTEGER, share INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(feed, article, user, share))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTO_INCREMENT, article VARCHAR(255), feed VARCHAR(255), user INTEGER, note TEXT, UNIQUE(article, feed, user))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS friends (user INTEGER, friend INTEGER, UNIQUE(user, friend))')
+		cursor.execute('CREATE TABLE IF NOT EXISTS comments (user INTEGER, share INTEGER, comment TEXT, time TIMESTAMP)') 
 		try:
 			request.store().createTables()
 		except:

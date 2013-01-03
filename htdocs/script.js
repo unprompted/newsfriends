@@ -237,13 +237,40 @@ function makeEntryNode(entry) {
 	$(entryDiv).append(expand);
 	$(expand).append(summaryDiv);
 	var readButton = $('<input type="button"></input>');
-	var starredButton = $('<input type="button"></input>');
-	var shareNote = $('<input type="text"></input>');
-	var shareButton = $('<input type="button"></input>');
 	$(expand).append(readButton);
+	var starredButton = $('<input type="button"></input>');
 	$(expand).append(starredButton);
+	var shareNote = $('<input type="text"></input>');
 	$(expand).append(shareNote);
+	var shareButton = $('<input type="button"></input>');
 	$(expand).append(shareButton);
+
+	if (entry.share) {
+		var commentsDiv = document.createElement('div');
+		entry.comments.forEach(function(comment) {
+			console.debug(comment);
+			var div = document.createElement('div');
+			$(div).text('<' + (comment.username || "Anonymous") + '> ' + comment.comment);
+			$(commentsDiv).append(div);
+		});
+		var commentArea = $('<textarea></textarea>');
+		$(commentsDiv).append(commentArea);
+		var commentButton = $('<input type="button" value="Add Comment"></input>');
+		$(commentsDiv).append(commentButton);
+
+		$(commentButton).click(function() {
+			$.ajax({
+				type: "POST",
+				url: "addComment",
+				data: {'share': entry.share, 'comment': $(commentArea).val()},
+				dataType: 'json',
+			}).done(function() {
+				$(commentArea).val('');
+			});
+		});
+
+		$(expand).append(commentsDiv);
+	}
 
 	function updateReadButton(entry, readButton) {
 		$(readButton).val(entry.isRead ? "Mark Unread" : "Mark Read");
