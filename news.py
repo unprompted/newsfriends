@@ -11,6 +11,7 @@ from genshi.template import TemplateLoader
 import pickle
 import mimetypes
 import simplejson
+import urllib
 import urllib2
 import datetime
 import feedparser
@@ -65,6 +66,7 @@ class FeedCache(object):
 				try:
 					headers = {'User-Agent': 'UnpromptedNews/1.0'}
 					document = unicode(urllib2.urlopen(urllib2.Request(url, None, headers), timeout=15).read(), 'utf-8')
+					error = None
 					lastUpdate = now
 				except Exception, e:
 					error = str(e)
@@ -330,11 +332,13 @@ class Application(object):
 		cursor = request.db().cursor()
 		try:
 			for entry in feed.entries:
+				entryTitle = 'No Title'
 				entryId = entry.id if 'id' in entry else None
 				entryLink = entry.link if 'link' in entry else None
 				entryId = entryId or entryLink
 				if entryId:
-					entryTitle = makeHtml(entry.title_detail)
+					if 'title_detail' in entry:
+						entryTitle = makeHtml(entry.title_detail)
 					if 'content' in entry and entry.content:
 						entrySummary = '\n'.join(makeHtml(content) for content in entry.content)
 					elif 'summary_detail' in entry:
@@ -433,7 +437,9 @@ class Application(object):
 		news['items'] = allItems[:resultLimit]
 		news['more'] = len(allItems) > resultLimit
 
+		cursor.execute('UPDATE users SET lastRefresh=NOW() WHERE id=%s', (request.session['userId'],))
 		cursor.close()
+		request.db().commit()
 		return self.json(request, news)
 
 	@json
@@ -589,22 +595,49 @@ application = app.handler
 
 if __name__ == '__main__':
 	if 'fetch' in sys.argv:
-		def startResponse(result, headers):
-			pass
-		request = Request({}, startResponse)
-		cursor = request.db().cursor()
-		cursor.execute('SELECT url FROM feeds')
-		urls = [row[0] for row in cursor]
-		cursor.close()
+		lastRefresh = None
+		while True:
+			try:
+				def startResponse(result, headers):
+					pass
+				request = Request({}, startResponse)
+				cursor = request.db().cursor()
 
-		for url in urls:
-			request = Request({'QUERY_STRING': 'feedUrl=' + url, 'wsgi.input': ''}, startResponse)
-			print app.handle_fetchFeed(request)
+				cursor.execute('SELECT MAX(lastRefresh) FROM users')
+				row = cursor.fetchone()
+				active = not lastRefresh or row and row[0] > lastRefresh
+
+				lastRefresh = datetime.datetime.now()
+
+				if active:
+					cursor.execute('SELECT DISTINCT url FROM subscriptions WHERE url IS NOT NULL')
+					urls = [row[0] for row in cursor]
+				else:
+					cursor.execute('SELECT DISTINCT subscriptions.url FROM subscriptions LEFT OUTER JOIN feeds ON subscriptions.url=feeds.url WHERE subscriptions.url IS NOT NULL ORDER BY feeds.lastAttempt LIMIT 1')
+					urls = [row[0] for row in cursor]
+				cursor.close()
+
+				for url in urls:
+					if url:
+						request = Request({'QUERY_STRING': 'feedUrl=' + urllib.quote(url), 'wsgi.input': ''}, startResponse)
+						print active, app.handle_fetchFeed(request)
+				if active:
+					time.sleep(5)
+				else:
+					print 'Inactive.  Sleeping.'
+					time.sleep(60)
+			except KeyboardInterrupt:
+				print 'Terminated.'
+				break
+			except Exception, e:
+				import traceback
+				traceback.print_exc()
+				time.sleep(60)
 	else:
 		request = Request({}, None)
 		cursor = request.db().cursor()
 		cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session VARCHAR(16), name VARCHAR(255), value BLOB, UNIQUE (session, name))')
-		cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTO_INCREMENT, secret TEXT, username TEXT)')
+		cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTO_INCREMENT, secret TEXT, username TEXT, lastRefresh TIMESTAMP)')
 		cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity VARCHAR(255), UNIQUE(user, identity))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(255), url VARCHAR(255), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(255) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')

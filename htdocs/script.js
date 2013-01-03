@@ -147,18 +147,7 @@ function refreshFeeds() {
 	$("#articles").empty();
 	$("#feed_message").show();
 	$("#feed_message").text("Loading...");
-	gSubscriptionsToFetch = [];
-	gSubscriptions.forEach(function(subscription) {
-		if (subscription.feedUrl) {
-			gSubscriptionsToFetch.push(subscription);
-		}
-	});
-	gSubscriptionsToFetchCount = gSubscriptionsToFetch.length;
-	gSubscriptionsFetchedCount = 0;
-	gWorkerCount = 4;
-	for (var i = gWorkerCount; i > 0; i--) {
-		refreshFeedHandler();
-	}
+	loadNews();
 }
 
 function refreshFeedHandler() {
