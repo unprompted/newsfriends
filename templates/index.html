@@ -31,7 +31,7 @@
 		<div id="main">
 			<div id="sidebar">
 				<div py:if="'oid' in session">
-					<h1 id="display_name">${session.username if session.username else 'Anonymous'}</h1>
+					<h1 id="display_name">${session.username if 'username' in session and session.username else 'Anonymous'}</h1>
 					<div><a href="${environment.SCRIPT_NAME}/logout">Log out</a></div>
 				</div>
 				<div id="menu"/>
@@ -84,7 +84,7 @@
 					<div id="content_user" class="content" data-name="Preferences">
 						<h1>User Settings</h1>
 						<div>
-							<div><label for="id">Username</label>: <input type="text" id="name" value="${session.username}"/></div>
+							<div><label for="id">Username</label>: <input type="text" id="name" value="${session.username if 'username' in session and session.username else 'Anonymous'}"/></div>
 							<div><input type="checkbox" id="public" checked="${True if 'public' in session and session.public else None}"/><label for="public">Let other people find me</label></div>
 							<input type="submit" id="user_apply" value="Apply Changes"/>
 						</div>
