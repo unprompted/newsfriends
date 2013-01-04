@@ -10,6 +10,7 @@ $(document).ready(function() {
 	$("#refresh_feeds").click(refreshFeeds);
 	$("#mark_all_read_feeds").click(markAllRead);
 	$("#user_apply").click(setPreferences);
+	$("#hide_errors").click(hideErrors);
 
 	if (gAuthenticated) {
 		loadSubscriptions();
@@ -92,6 +93,7 @@ function makeSubscriptionNode(subscription) {
 			data: { feedUrl: subscription.feedUrl },
 			dataType: 'json',
 		}).done(function(data) {
+			updateError(data);
 			loadSubscriptions();
 		});
 	});
@@ -168,7 +170,6 @@ function loadUsers() {
 		dataType: "json",
 	}).done(function(data) {
 		updateError(data);
-
 		var table = document.createElement('table');
 		var row = document.createElement('tr');
 		['Name', 'Privacy', 'Status', 'Available Actions'].forEach(function(heading) {
@@ -224,6 +225,7 @@ function setPreferences() {
 		data: {'username': newName, 'public': newPublic},
 		dataType: 'json',
 	}).done(function(data) {
+		updateError(data);
 		if (data.affectedRows > 0) {
 			$("#display_name").text(newName);
 		}
@@ -242,6 +244,7 @@ function addSubscription() {
 		data: { feedUrl: feedUrl },
 		dataType: 'json',
 	}).done(function(data) {
+		updateError(data);
 		loadSubscriptions();
 	});
 }
@@ -254,6 +257,7 @@ function markAllRead() {
 			data: {},
 			dataType: 'json',
 		}).done(function(data) {
+			updateError(data);
 			loadNews();
 		});
 	}
@@ -275,10 +279,7 @@ function refreshFeedHandler() {
 			data: { feedUrl: subscription.feedUrl },
 			dataType: 'json',
 		}).done(function(data) {
-			if (data.error) {
-				console.debug(data.error);
-				console.debug(data.traceback);
-			}
+			updateError(data);
 		}).fail(function(xhr, status) {
 			console.debug(subscription.feedUrl + " - " + status);
 		}).always(function() {
@@ -297,12 +298,19 @@ function updateError(data) {
 	if (data.error) {
 		var node = document.createElement('div');
 		$(node).text(data.error);
-		$("#error").append(node);
-		node = document.createElement('pre');
+		$(node).addClass("exception");
+		$("#error_contents").append(node);
+		node = document.createElement('div');
 		$(node).text(data.traceback);
-		$("#error").append(node);
+		$(node).addClass("traceback");
+		$("#error_contents").append(node);
 		$("#error").show();
 	}
+}
+
+function hideErrors() {
+	$("#error").hide();
+	$("#error_contents").empty();
 }
 
 function loadNews() {
@@ -385,7 +393,8 @@ function makeEntryNode(entry) {
 				url: "addComment",
 				data: {'share': entry.share, 'comment': $(commentArea).val()},
 				dataType: 'json',
-			}).done(function() {
+			}).done(function(data) {
+				updateError(data);
 				$(commentArea).val('');
 			});
 		});
@@ -403,6 +412,7 @@ function makeEntryNode(entry) {
 		$(shareButton).val(entry.shared ? "Unshare" : "Share");
 	}
 	function entryUpdated(data) {
+		updateError(data);
 		if ('isRead' in data) {
 			entry.isRead = data['isRead'];
 			updateReadButton(entry, readButton);
