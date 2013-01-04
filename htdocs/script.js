@@ -149,6 +149,7 @@ function loadSubscriptions() {
 		gSubscriptions = data['subscriptions'];
 		$("#subscriptions").empty();
 		var table = document.createElement('table');
+		$(table).addClass('wide');
 		var tr = document.createElement('tr');
 		['Name', 'Feed URL', 'Status', 'Actions'].forEach(function(heading) {
 			var th = document.createElement('th');
@@ -199,6 +200,7 @@ function loadUsers() {
 	}).done(function(data) {
 		updateError(data);
 		var table = document.createElement('table');
+		$(table).addClass('wide');
 		var row = document.createElement('tr');
 		['Name', 'Privacy', 'Status', 'Available Actions'].forEach(function(heading) {
 			var th = document.createElement('th');
