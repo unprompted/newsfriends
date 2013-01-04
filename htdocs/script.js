@@ -405,7 +405,7 @@ function makeArticleNode(article) {
 		$(span).text(article.sharedBy);
 		$(span).addClass("sharer");
 		$(div).append(span);
-		if (article.sharedNote != null) {
+		if (article.sharedNote) {
 			span = document.createElement('span');
 			$(span).text(article.sharedNote);
 			$(span).addClass("shareNote");
