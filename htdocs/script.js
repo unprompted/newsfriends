@@ -22,38 +22,43 @@ $(document).ready(function() {
 	showSection("content_news");
 });
 
+function selectArticle(index) {
+	if (index != gSelected) {
+		$("#articles").children().eq(gSelected).removeClass('selected');
+		gSelected = index;
+		if (gSelected >= 0 && gSelected < $("#articles").children().length) {
+			var toShow = $("#articles").children().eq(gSelected);
+			toShow.addClass('selected');
+			toShow.trigger('markRead');
+			toShow.get(0).scrollIntoView(true);
+		}
+	}
+}
+
 $(document).keypress(function(event) {
 	if (event.target.tagName != 'TEXTAREA' && event.target.tagName != 'INPUT' && event.target.tagName != 'SELECT') {
 		if ($("#content_news").is(":visible")) {
 			var character = String.fromCharCode(event.keyCode);
-			var lastSelected = gSelected;
+			var select = gSelected;
 			if (character == 'j') {
-				if (gSelected == -1) {
-					gSelected = 0;
-				} else if (gSelected >= 0 && gSelected < $("#articles").children().length - 1) {
-					gSelected++;
+				if (select == -1) {
+					select = 0;
+				} else if (select >= 0 && select < $("#articles").children().length - 1) {
+					select++;
 				}
 			} else if (character == 'k') {
-				if (gSelected == -1) {
-					gSelected = $("#articles").children().length - 1;
-				} else if (gSelected > 0 && gSelected < $("#articles").children().length) {
-					gSelected--;
+				if (select == -1) {
+					select = $("#articles").children().length - 1;
+				} else if (select > 0 && select < $("#articles").children().length) {
+					select--;
 				}
 			} else if (character == 'r') {
 				refreshFeeds();
 			} else if (character == 's') {
-				$("#articles").children().eq(gSelected).trigger('toggleStarred');
+				$("#articles").children().eq(select).trigger('toggleStarred');
 			}
 
-			if (lastSelected != gSelected) {
-				$("#articles").children().eq(lastSelected).removeClass('selected');
-				if (gSelected >= 0 && gSelected < $("#articles").children().length) {
-					var toShow = $("#articles").children().eq(gSelected);
-					toShow.addClass('selected');
-					toShow.trigger('markRead');
-					toShow.get(0).scrollIntoView(true);
-				}
-			}
+			selectArticle(select);
 		}
 	}
 });
@@ -356,45 +361,71 @@ function loadNews() {
 		$("#articles").empty();
 		$("#feed_message").hide();
 		var allEntries = []
-		data.items.forEach(function(entry) {
-			$("#articles").append(makeEntryNode(entry));
+		data.items.forEach(function(article) {
+			$("#articles").append(makeArticleNode(article));
 		});
 	});
 }
 
-function makeEntryNode(entry) {
+function makeArticleNode(article) {
 	var entryDiv = document.createElement('div');
 	$(entryDiv).addClass('article');
-	var titleDiv = document.createElement('div');
-	$(titleDiv).css({'font-weight': 'bold'});
-	if (entry.sharedBy != null) {
-		var div = document.createElement('div');
-		var span = document.createElement('span');
-		$(span).text("Shared by: ");
-		$(div).append(span);
-		span = document.createElement('span');
-		$(span).text(entry.sharedBy);
-		$(span).css("font-weight", "bold");
-		$(div).append(span);
-		if (entry.sharedNote != null) {
-			span = document.createElement('span');
-			$(span).text(entry.sharedNote);
-			$(span).css({'background-color': '#fff', 'border': '2px solid black', 'margin': '1em', 'padding': '0.5em', 'display': 'block'});
-			$(div).append(span);
-		}
-		$(entryDiv).append(div);
+
+	var headingDiv = document.createElement('div');
+	$(headingDiv).addClass("heading");
+	var feedName = document.createElement('span');
+	$(feedName).addClass("feedName");
+	if (article.feedName) {
+		$(feedName).text(article.feedName);
+	} else if (article.sharedBy) {
+		$(feedName).text("Shared by " + article.sharedBy);
+	} else {
+		$(feedName).text("???");
 	}
+	$(headingDiv).append(feedName);
+	var subjectDiv = document.createElement('span');
+	$(subjectDiv).addClass("title");
+	$(subjectDiv).text(article.title);
+	$(headingDiv).append(subjectDiv);
+	var index = $("#articles").children().length;
+	$(headingDiv).click(function() {
+		selectArticle(index);
+	});
+	$(entryDiv).append(headingDiv);
+
 	var expand = document.createElement('div');
 	$(expand).addClass('expand');
-	var summaryDiv = document.createElement('div');
+
+	if (article.sharedBy != null) {
+		var div = document.createElement('div');
+		var span = document.createElement('span');
+		$(span).text("Shared by ");
+		$(div).append(span);
+		span = document.createElement('span');
+		$(span).text(article.sharedBy);
+		$(span).addClass("sharer");
+		$(div).append(span);
+		if (article.sharedNote != null) {
+			span = document.createElement('span');
+			$(span).text(article.sharedNote);
+			$(span).addClass("shareNote");
+			$(div).append(span);
+		}
+		$(expand).append(div);
+	}
+
 	var link = document.createElement('a');
-	$(link).attr('href', entry.link || entry.id);
+	$(link).attr('href', article.link || article.id);
 	$(link).attr('target', '_blank');
-	$(link).html(entry.title);
+	$(link).html(article.title);
+	var titleDiv = document.createElement('div');
+	$(titleDiv).addClass("title");
 	$(titleDiv).append(link);
-	$(summaryDiv).html(entry.summary);
-	$(entryDiv).append(titleDiv);
-	$(entryDiv).append(expand);
+	$(expand).append(titleDiv);
+
+	var summaryDiv = document.createElement('div');
+	$(summaryDiv).addClass("summary");
+	$(summaryDiv).html(article.summary);
 	$(expand).append(summaryDiv);
 	var readButton = $('<input type="button"></input>');
 	$(expand).append(readButton);
@@ -405,70 +436,100 @@ function makeEntryNode(entry) {
 	var shareButton = $('<input type="button"></input>');
 	$(expand).append(shareButton);
 
-	if (entry.share) {
+	function addComment(container, time, username, comment) {
+		var div = document.createElement('div');
+
+		var span = document.createElement('span');
+		$(span).text(new Date(time * 1000));
+		$(span).addClass("time");
+		$(div).append(span);
+
+		span = document.createElement('span');
+		$(span).text(username || "Anonymous");
+		$(span).addClass("username");
+		$(div).append(span);
+
+		span = document.createElement('span');
+		$(span).text(comment);
+		$(span).addClass("comment");
+		$(div).append(span);
+
+		$(container).append(div);
+	}
+
+	if (article.share) {
 		var commentsDiv = document.createElement('div');
-		entry.comments.forEach(function(comment) {
-			var div = document.createElement('div');
-			$(div).text('<' + (comment.username || "Anonymous") + '> ' + comment.comment);
-			$(commentsDiv).append(div);
+		$(commentsDiv).addClass("comments");
+		$(commentsDiv).append("<hr></hr>");
+		$(commentsDiv).append("<div class='heading'>Comments:</div>");
+		var commentsListDiv = document.createElement('div');
+		article.comments.forEach(function(comment) {
+			addComment(commentsListDiv, comment.time, comment.username, comment.comment);
 		});
+		$(commentsDiv).append(commentsListDiv);
 		var commentArea = $('<textarea></textarea>');
 		$(commentsDiv).append(commentArea);
 		var commentButton = $('<input type="button" value="Add Comment"></input>');
 		$(commentsDiv).append(commentButton);
 
 		$(commentButton).click(function() {
+			var comment = $(commentArea).val();
+			$(commentButton).get().disabled = true;
 			$.ajax({
 				type: "POST",
 				url: "addComment",
-				data: {'share': entry.share, 'comment': $(commentArea).val()},
+				data: {'share': article.share, 'comment': comment},
 				dataType: 'json',
 			}).done(function(data) {
 				updateError(data);
+				addComment(commentsListDiv, new Date().getTime() / 1000, $("#display_name").text(), comment);
 				$(commentArea).val('');
+			}).always(function(data) {
+				$(commentButton).get().disabled = false;
 			});
 		});
 
 		$(expand).append(commentsDiv);
 	}
+	$(entryDiv).append(expand);
 
-	function updateReadButton(entry, readButton) {
-		$(readButton).val(entry.isRead ? "Mark Unread" : "Mark Read");
+	function updateReadButton(article, readButton) {
+		$(readButton).val(article.isRead ? "Mark Unread" : "Mark Read");
 	}
-	function updateStarredButton(entry, starredButton) {
-		$(starredButton).val(entry.starred ? "Remove Star" : "Add Star");
+	function updateStarredButton(article, starredButton) {
+		$(starredButton).val(article.starred ? "Remove Star" : "Add Star");
 	}
-	function updateShareButton(entry, shareButton) {
-		$(shareButton).val(entry.shared ? "Unshare" : "Share");
+	function updateShareButton(article, shareButton) {
+		$(shareButton).val(article.shared ? "Unshare" : "Share");
 	}
 	function entryUpdated(data) {
 		updateError(data);
 		if ('isRead' in data) {
-			entry.isRead = data['isRead'];
-			updateReadButton(entry, readButton);
+			article.isRead = data['isRead'];
+			updateReadButton(article, readButton);
 		}
 		if ('starred' in data) {
-			entry.starred = data['starred'];
-			updateStarredButton(entry, starredButton);
+			article.starred = data['starred'];
+			updateStarredButton(article, starredButton);
 		}
 		if ('shared' in data) {
-			entry.shared = data['shared'];
-			updateShareButton(entry, shareButton);
+			article.shared = data['shared'];
+			updateShareButton(article, shareButton);
 		}
-		if (entry.isRead) {
+		if (article.isRead) {
 			$(entryDiv).addClass('read');
 		} else {
 			$(entryDiv).removeClass('read');
 		}
 	}
-	updateReadButton(entry, readButton);
-	updateStarredButton(entry, starredButton);
-	updateShareButton(entry, shareButton);
+	updateReadButton(article, readButton);
+	updateStarredButton(article, starredButton);
+	updateShareButton(article, shareButton);
 	$(entryDiv).on('markRead', function() {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'isRead': true},
+			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'isRead': true},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -476,7 +537,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'starred': !entry.starred},
+			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'starred': !article.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -484,7 +545,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'isRead': !entry.isRead},
+			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'isRead': !article.isRead},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -492,7 +553,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'starred': !entry.starred},
+			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'starred': !article.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -500,7 +561,7 @@ function makeEntryNode(entry) {
 		$.ajax({
 			type: "POST",
 			url: "setShared",
-			data: {'feed': entry.feed, 'article': entry.id, 'share': entry.shared ? -1 : entry.share, 'share': !entry.shared, 'note': $(shareNote).val()},
+			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'share': !article.shared, 'note': $(shareNote).val()},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});

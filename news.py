@@ -456,6 +456,7 @@ class Application(object):
 			SELECT
 				articles.id AS id,
 				articles.feed AS feed,
+				subscriptions.name AS feedName,
 				articles.title AS title,
 				articles.summary AS summary,
 				articles.link AS link,
@@ -541,7 +542,13 @@ class Application(object):
 		cursor = request.db().cursor()
 		cursor.execute('INSERT INTO comments (user, share, comment, time) VALUES (%s, %s, %s, %s)', (request.session['userId'], shareId, comment, datetime.datetime.now()))
 		rows = cursor.rowcount
-		cursor.execute('UPDATE statuses SET isRead=FALSE WHERE share=%s AND isRead=TRUE', (shareId,))
+		cursor.execute('SELECT user, article, feed FROM shares WHERE id=%s', (shareId,))
+		row = cursor.fetchone()
+		if row:
+			user, article, feed = row
+		else:
+			user, article, feed = None, None, None
+		cursor.execute('UPDATE statuses SET isRead=FALSE WHERE (share=%s OR share=-1 AND user=%s AND article=%s AND feed=%s) AND isRead=TRUE', (shareId, user, article, feed))
 		cursor.close()
 		request.db().commit()
 		return self.json(request, {'affectedRows': rows})

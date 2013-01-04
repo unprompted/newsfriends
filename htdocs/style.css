@@ -50,6 +50,9 @@ body {
 	display: none;
 }
 
+.article.selected .expand {
+}
+
 .article.read {
 	background-color: #fff;
 }
@@ -108,4 +111,70 @@ table.wide {
 table.wide td,th {
 	border: 1px solid black;
 	word-wrap: break-word;
+}
+
+.article .heading {
+	white-space: nowrap;
+	padding: 2px;
+	cursor: pointer;
+}
+
+.article .heading .feedName {
+	float: left;
+	width: 192px;
+	max-width: 192px;
+	color: #888;
+	overflow: hidden;
+}
+
+.article .heading .title {
+	font-weight: bold;
+	padding: 2px;
+}
+
+.article .expand .title {
+	font-weight: bold;
+}
+
+.article .summary {
+}
+
+.article .expand .sharer {
+	font-weight: bold;
+}
+
+.article .expand .shareNote {
+	background-color: #aaf;
+	border: 2px solid black;
+	margin: 1em;
+	padding: 0.5em;
+	display: block;
+}
+
+.comments textarea {
+	display: block;
+	clear: both;
+}
+
+input.comments {
+	display: block;
+	clear: both;
+}
+
+.comments .heading {
+	font-weight: bold;
+}
+
+.comments .time {
+	color: #888;
+	font-size: x-small;
+}
+
+.comments .username {
+	font-weight: bold;
+	margin-left: 8px;
+	margin-right: 8px;
+}
+
+.comments .comment {
 }
