@@ -306,7 +306,14 @@ class Application(object):
 		if not 'userId' in request.session:
 			raise RuntimeError('Must be logged in.')
 		cursor = request.db().cursor()
-		cursor.execute('SELECT id, user, name, url AS feedUrl, parent FROM subscriptions WHERE user=%s ORDER BY name DESC, url DESC', (request.session['userId'],))
+		cursor.execute('''
+			SELECT id, user, name, subscriptions.url AS feedUrl, parent, feeds.error, feeds.lastAttempt, feeds.lastUpdate
+			FROM subscriptions
+			LEFT OUTER JOIN feeds ON feeds.url=subscriptions.url
+			WHERE user=%s
+			ORDER BY name, subscriptions.url
+			''',
+			(request.session['userId'],))
 		columnNames = [d[0] for d in cursor.description]
 		result = {'subscriptions': [dict(zip(columnNames, row)) for row in cursor]}
 		cursor.close()
