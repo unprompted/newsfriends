@@ -95,3 +95,17 @@ body {
 	white-space: pre-wrap;
 	margin-left: 16px;
 }
+
+table {
+	background-color: #fff;
+	color: #000;
+	width: 100%;
+	border-spacing: 0;
+	border: 2px solid black;
+	table-layout: fixed;
+}
+
+td, th {
+	border: 1px solid black;
+	word-wrap: break-word;
+}

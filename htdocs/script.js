@@ -79,41 +79,62 @@ function showSection(id) {
 	$('#menu_' + id).addClass("selected");
 }
 
-function makeSubscriptionNode(subscription) {
-	var li = document.createElement('li');
-	$(li).attr('name', "subscription" + subscription.id);
-	$(li).text(subscription.name || subscription.feedUrl);
-	var button = document.createElement('input');
-	$(button).attr('type', 'button');
-	$(button).attr('value', 'Delete');
-	$(button).click(function() {
-		$.ajax({
-			type: "POST",
-			url: "deleteSubscription",
-			data: { feedUrl: subscription.feedUrl },
-			dataType: 'json',
-		}).done(function(data) {
-			updateError(data);
-			loadSubscriptions();
-		});
-	});
-	$(li).append(button);
+function makeSubscriptionNodes(subscription, indent) {
+	var nodes = [];
 
-	var children = [];
-	gSubscriptions.forEach(function(other) {
-		if (other.parent == subscription.id) {
-			children.push(other);
+	if (subscription != null) {
+		var tr = document.createElement('tr');
+		var td = document.createElement('td');
+		$(td).text(subscription.name || "Unnamed");
+		$(td).css('padding-left', (indent * 2) + 'em');
+		$(tr).append(td);
+
+		td = document.createElement('td');
+		if (subscription.feedUrl) {
+			var a = document.createElement('a');
+			$(a).attr('href', subscription.feedUrl);
+			$(a).text(subscription.feedUrl);
+			$(td).css('max-width', '5%');
+			$(td).append(a);
 		}
-	});
-	if (children.length) {
-		var ul = document.createElement('ul');
-		$(li).append(ul);
-		children.forEach(function(child) {
-			$(ul).append(makeSubscriptionNode(child));
+		$(tr).append(td);
+
+		td = document.createElement('td');
+		if (subscription.error) {
+			$(td).text("Error: " + subscription.error);
+			$(td).css('color', 'red');
+		} else if (subscription.lastUpdate) {
+			$(td).text("Last updated: " + new Date(subscription.lastUpdate * 1000));
+		}
+		$(tr).append(td);
+
+		td = document.createElement('td');
+		var button = document.createElement('input');
+		$(button).attr('type', 'button');
+		$(button).attr('value', 'Delete');
+		$(button).click(function() {
+			$.ajax({
+				type: "POST",
+				url: "deleteSubscription",
+				data: { feedUrl: subscription.feedUrl },
+				dataType: 'json',
+			}).done(function(data) {
+				updateError(data);
+				loadSubscriptions();
+			});
 		});
+		$(td).append(button);
+		$(tr).append(td);
+		nodes.push(tr);
 	}
 
-	return li;
+	gSubscriptions.forEach(function(other) {
+		if ((subscription == null && other.parent == null) || (subscription != null && other.parent == subscription.id)) {
+			nodes.push(makeSubscriptionNodes(other, indent + 1));
+		}
+	});
+
+	return nodes;
 }
 
 function loadSubscriptions() {
@@ -127,11 +148,18 @@ function loadSubscriptions() {
 		updateError(data);
 		gSubscriptions = data['subscriptions'];
 		$("#subscriptions").empty();
-		data['subscriptions'].forEach(function(subscription) {
-			if (subscription.parent == null) {
-				$("#subscriptions").append(makeSubscriptionNode(subscription));
-			}
+		var table = document.createElement('table');
+		var tr = document.createElement('tr');
+		['Name', 'Feed URL', 'Status', 'Actions'].forEach(function(heading) {
+			var th = document.createElement('th');
+			$(th).text(heading);
+			$(tr).append(th);
 		});
+		$(table).append(tr);
+		makeSubscriptionNodes(null, 0).forEach(function(row) {
+			$(table).append(row);
+		});
+		$("#subscriptions").append(table);
 	});
 }
 
