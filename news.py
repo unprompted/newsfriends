@@ -21,8 +21,12 @@ import base64
 import StringIO
 import sys
 import hashlib
+import robotparser
+import urlparse
 
 dbArgs = {'user': 'news', 'passwd': 'news', 'db': 'news'}
+fetchRobotTime = 60 * 60 * 24
+userAgent = 'UnpromptedNews/1.0'
 
 def json(method):
 	method.contentType = 'application/json'
@@ -65,7 +69,7 @@ class FeedCache(object):
 			if not lastAttempt or now - lastAttempt > datetime.timedelta(minutes=5):
 				lastAttempt = now
 				try:
-					headers = {'User-Agent': 'UnpromptedNews/1.0'}
+					headers = {'User-Agent': userAgent}
 					document = unicode(urllib2.urlopen(urllib2.Request(url, None, headers), timeout=15).read(), 'utf-8')
 					error = None
 					lastUpdate = now
@@ -701,6 +705,7 @@ application = app.handler
 if __name__ == '__main__':
 	if 'fetch' in sys.argv:
 		lastRefresh = None
+		robots = {}
 		while True:
 			try:
 				def startResponse(result, headers):
@@ -724,8 +729,20 @@ if __name__ == '__main__':
 
 				for url in urls:
 					if url:
-						request = Request({'QUERY_STRING': 'feedUrl=' + urllib.quote(url), 'wsgi.input': ''}, startResponse)
-						print active, app.handle_fetchFeed(request)
+						robotUrl = urlparse.urlunparse(urlparse.urlparse(url)[:2] + ('robots.txt', '', '', ''))
+						if not robotUrl in robots:
+							robots[robotUrl] = robotparser.RobotFileParser(robotUrl)
+						robot = robots[robotUrl]
+						if robot.mtime() < time.time() - fetchRobotTime:
+							try:
+								robot.read()
+							except Exception, e:
+								print 'Failed to read %s: %s' % (robotUrl, e)
+						if robot.can_fetch(userAgent, url):
+							request = Request({'QUERY_STRING': 'feedUrl=' + urllib.quote(url), 'wsgi.input': ''}, startResponse)
+							print active, app.handle_fetchFeed(request)
+						else:
+							print 'Skipped because of robots.txt:', url
 				if active:
 					time.sleep(5)
 				else:
