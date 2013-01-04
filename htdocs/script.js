@@ -9,47 +9,74 @@ $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
 	$("#refresh_feeds").click(refreshFeeds);
 	$("#mark_all_read_feeds").click(markAllRead);
-	$("#set_name").click(setName);
+	$("#user_apply").click(setPreferences);
 
 	if (gAuthenticated) {
 		loadSubscriptions();
 		loadNews();
+		loadUsers();
 	}
+
+	makeMenu();
+	showSection("content_news");
 });
 
 $(document).keypress(function(event) {
 	if (event.target.tagName != 'TEXTAREA' && event.target.tagName != 'INPUT' && event.target.tagName != 'SELECT') {
-		var character = String.fromCharCode(event.keyCode);
-		var lastSelected = gSelected;
-		if (character == 'j') {
-			if (gSelected == -1) {
-				gSelected = 0;
-			} else if (gSelected >= 0 && gSelected < $("#articles").children().length - 1) {
-				gSelected++;
+		if ($("#content_news").is(":visible")) {
+			var character = String.fromCharCode(event.keyCode);
+			var lastSelected = gSelected;
+			if (character == 'j') {
+				if (gSelected == -1) {
+					gSelected = 0;
+				} else if (gSelected >= 0 && gSelected < $("#articles").children().length - 1) {
+					gSelected++;
+				}
+			} else if (character == 'k') {
+				if (gSelected == -1) {
+					gSelected = $("#articles").children().length - 1;
+				} else if (gSelected > 0 && gSelected < $("#articles").children().length) {
+					gSelected--;
+				}
+			} else if (character == 'r') {
+				refreshFeeds();
+			} else if (character == 's') {
+				$("#articles").children().eq(gSelected).trigger('toggleStarred');
 			}
-		} else if (character == 'k') {
-			if (gSelected == -1) {
-				gSelected = $("#articles").children().length - 1;
-			} else if (gSelected > 0 && gSelected < $("#articles").children().length) {
-				gSelected--;
-			}
-		} else if (character == 'r') {
-			refreshFeeds();
-		} else if (character == 's') {
-			$("#articles").children().eq(gSelected).trigger('toggleStarred');
-		}
 
-		if (lastSelected != gSelected) {
-			$("#articles").children().eq(lastSelected).removeClass('selected');
-			if (gSelected >= 0 && gSelected < $("#articles").children().length) {
-				var toShow = $("#articles").children().eq(gSelected);
-				toShow.addClass('selected');
-				toShow.trigger('markRead');
-				toShow.get(0).scrollIntoView(true);
+			if (lastSelected != gSelected) {
+				$("#articles").children().eq(lastSelected).removeClass('selected');
+				if (gSelected >= 0 && gSelected < $("#articles").children().length) {
+					var toShow = $("#articles").children().eq(gSelected);
+					toShow.addClass('selected');
+					toShow.trigger('markRead');
+					toShow.get(0).scrollIntoView(true);
+				}
 			}
 		}
 	}
 });
+
+function makeMenu() {
+	$(".content").each(function() {
+		var div = document.createElement('div');
+		$(div).addClass("menu");
+		$(div).text($(this).data("name"));
+		var id = $(this).attr("id");
+		$(div).click(function() {
+			showSection(id);
+		});
+		$(div).attr("id", "menu_" + id);
+		$("#menu").append(div);
+	});
+}
+
+function showSection(id) {
+	$(".menu").removeClass("selected");
+	$(".content").hide();
+	$('#' + id).show();
+	$('#menu_' + id).addClass("selected");
+}
 
 function makeSubscriptionNode(subscription) {
 	var li = document.createElement('li');
@@ -95,6 +122,7 @@ function loadSubscriptions() {
 		url: "getSubscriptions",
 		dataType: 'json',
 	}).done(function(data) {
+		updateError(data);
 		gSubscriptions = data['subscriptions'];
 		$("#subscriptions").empty();
 		data['subscriptions'].forEach(function(subscription) {
@@ -105,16 +133,103 @@ function loadSubscriptions() {
 	});
 }
 
-function setName() {
-	var newName = $("#name").val();
-	$("#set_name").get().disabled = true;
+function addFriend(user) {
 	$.ajax({
 		type: "POST",
-		url: "setName",
-		data: {'name': newName},
+		url: "addFriend",
+		data: {'secret': user.secret},
+		dataType: "json",
+	}).done(function(data) {
+		updateError(data);
+		loadUsers();
+	});
+}
+
+function removeFriend(user) {
+	if (confirm('Are you sure you want to remove your friend "' + user.username + '"?')) {
+		$.ajax({
+			type: "POST",
+			url: "removeFriend",
+			data: {'id': user.id},
+			dataType: "json",
+		}).done(function(data) {
+			updateError(data);
+			loadUsers();
+		});
+	}
+}
+
+function loadUsers() {
+	$("#users").empty();
+	$("#users").append("<div>Loading...</div>");
+	$.ajax({
+		type: "POST",
+		url: "getUsers",
+		dataType: "json",
+	}).done(function(data) {
+		updateError(data);
+
+		var table = document.createElement('table');
+		var row = document.createElement('tr');
+		['Name', 'Privacy', 'Status', 'Available Actions'].forEach(function(heading) {
+			var th = document.createElement('th');
+			$(th).text(heading);
+			$(row).append(th);
+		});
+		$(table).append(row);
+		data.users.forEach(function(user) {
+			row = document.createElement('tr');
+			var td = document.createElement('td');
+			$(td).text(user.username);
+			$(row).append(td);
+
+			td = document.createElement('td');
+			$(td).text(user.public ? "public" : "private");
+			$(row).append(td);
+
+			td = document.createElement('td');
+			$(td).text(user.isFriend ? "friends" : "not friends");
+			$(row).append(td);
+
+			td = document.createElement('td');
+			if (user.isFriend) {
+				var button = document.createElement('input');
+				$(button).attr('type', 'button');
+				$(button).attr('value', 'Remove Friend');
+				$(button).click(function() { removeFriend(user); });
+				$(td).append(button);
+			} else {
+				var button = document.createElement('input');
+				$(button).attr('type', 'button');
+				$(button).attr('value', 'Add Friend');
+				$(button).click(function() { addFriend(user); });
+				$(td).append(button);
+			}
+			$(row).append(td);
+
+			$(table).append(row);
+		});
+		$("#users").empty();
+		$("#users").append(table);
+	});
+}
+
+function setPreferences() {
+	var newName = $("#name").val();
+	var newPublic = $("#public").is(":checked");
+	$("#user_apply").get().disabled = true;
+	$.ajax({
+		type: "POST",
+		url: "setPreferences",
+		data: {'username': newName, 'public': newPublic},
 		dataType: 'json',
+	}).done(function(data) {
+		if (data.affectedRows > 0) {
+			$("#display_name").text(newName);
+		}
+	}).fail(function(xhr, status) {
 	}).always(function(data) {
-		$("#set_name").get().disabled = false;
+		$("#user_apply").get().disabled = false;
 	});
 }
 
@@ -139,7 +254,6 @@ function markAllRead() {
 			data: {},
 			dataType: 'json',
 		}).done(function(data) {
-			console.debug(data);
 			loadNews();
 		});
 	}
@@ -179,6 +293,18 @@ function refreshFeedHandler() {
 	}
 }
 
+function updateError(data) {
+	if (data.error) {
+		var node = document.createElement('div');
+		$(node).text(data.error);
+		$("#error").append(node);
+		node = document.createElement('pre');
+		$(node).text(data.traceback);
+		$("#error").append(node);
+		$("#error").show();
+	}
+}
+
 function loadNews() {
 	$.ajax({
 		type: "POST",
@@ -187,21 +313,14 @@ function loadNews() {
 		dataType: 'json',
 		timeout: 15000,
 	}).done(function(data) {
-		console.debug(data);
-		if (data.error) {
-			$("#error_message").text(data.error);
-			$("#error_traceback").text(data.traceback);
-			$("#error").show();
-		} else {
-			$("#error").hide();
-			gSelected = -1;
-			$("#articles").empty();
-			$("#feed_message").hide();
-			var allEntries = []
-			data.items.forEach(function(entry) {
-				$("#articles").append(makeEntryNode(entry));
-			});
-		}
+		updateError(data);
+		gSelected = -1;
+		$("#articles").empty();
+		$("#feed_message").hide();
+		var allEntries = []
+		data.items.forEach(function(entry) {
+			$("#articles").append(makeEntryNode(entry));
+		});
 	});
 }
 
@@ -251,7 +370,6 @@ function makeEntryNode(entry) {
 	if (entry.share) {
 		var commentsDiv = document.createElement('div');
 		entry.comments.forEach(function(comment) {
-			console.debug(comment);
 			var div = document.createElement('div');
 			$(div).text('<' + (comment.username || "Anonymous") + '> ' + comment.comment);
 			$(commentsDiv).append(div);

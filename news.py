@@ -20,6 +20,7 @@ from xml.etree import ElementTree as ET
 import base64
 import StringIO
 import sys
+import hashlib
 
 dbArgs = {'user': 'news', 'passwd': 'news', 'db': 'news'}
 
@@ -146,13 +147,15 @@ class Request(object):
 		row = cursor.fetchone()
 		if row:
 			self.session['userId'] = row[0]
-			cursor.execute('SELECT secret, username FROM users WHERE id=%s', (row[0],))
-			secret, username = cursor.fetchone()
+			cursor.execute('SELECT secret, username, public FROM users WHERE id=%s', (row[0],))
+			secret, username, public = cursor.fetchone()
 			self.session['secret'] = secret
 			self.session['username'] = username
+			self.session['public'] = public
 		else:
 			self.session['secret'] = randomString(16, '0123456789ABCDEF')
 			self.session['username'] = None
+			self.session['public'] = False
 			cursor.execute('INSERT INTO users (secret) VALUES (%s)', (self.session['secret'],))
 			self.session['userId'] = cursor.lastrowid
 			cursor.execute('INSERT INTO identities (user, identity) VALUES (%s, %s)', (self.session['userId'], self.session['oid']))
@@ -227,7 +230,7 @@ class Application(object):
 			raise RuntimeError('Verification failed: ' + info.message)
 
 	def handle_logout(self, request):
-		for key in ('oid', 'username', 'secret'):
+		for key in ('oid', 'username', 'secret', 'public'):
 			try:
 				del request.session[key]
 			except:
@@ -306,6 +309,66 @@ class Application(object):
 		result = {'subscriptions': [dict(zip(columnNames, row)) for row in cursor]}
 		cursor.close()
 		return self.json(request, result)
+
+	@json
+	def handle_getUsers(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		cursor = request.db().cursor()
+		cursor.execute('''
+			SELECT id, secret, username, public, friends.friend IS NOT NULL AS isFriend
+			FROM users
+			LEFT OUTER JOIN friends ON friends.user=%s AND users.id=friends.friend
+			WHERE (public OR friends.friend IS NOT NULL) AND id!=%s
+			ORDER BY NOT isFriend, username
+			''',
+			(request.session['userId'],) * 2)
+		columnNames = [d[0] for d in cursor.description]
+		result = {'users': [dict(zip(columnNames, row)) for row in cursor]}
+		for user in result['users']:
+			secret = hashlib.sha1(user['secret'] + request.session['secret']).hexdigest()
+			user['secret'] = secret
+		cursor.close()
+		return self.json(request, result)
+
+	@json
+	def handle_addFriend(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		form = request.form()
+		friendSecret = form.getvalue('secret')
+		if not friendSecret:
+			raise RuntimeError("Missing secret.")
+		cursor = request.db().cursor()
+		cursor.execute('SELECT id, secret FROM users ORDER BY username')
+		userToAdd = None
+		for user, secret in cursor:
+			test = hashlib.sha1(secret + request.session['secret']).hexdigest()
+			if test == friendSecret:
+				userToAdd = user
+		if userToAdd:
+			cursor.execute('INSERT INTO friends (user, friend) VALUES (%s, %s)', (request.session['userId'], userToAdd))
+			rows = cursor.rowcount
+		else:
+			raise RuntimeError("Could not find friend matching given secret.")
+		cursor.close()
+		request.db().commit()
+		return self.json(request, {'affectedRows': rows});
+
+	@json
+	def handle_removeFriend(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		form = request.form()
+		friendId = form.getvalue('id')
+		if not friendId:
+			raise RuntimeError("Missing id.")
+		cursor = request.db().cursor()
+		cursor.execute('DELETE FROM friends WHERE user=%s AND friend=%s', (request.session['userId'], friendId))
+		rows = cursor.rowcount
+		cursor.close()
+		request.db().commit()
+		return self.json(request, {'affectedRows': rows});
 
 	@json
 	def handle_fetchFeed(self, request):
@@ -526,14 +589,19 @@ class Application(object):
 		return self.json(request, {'shared': share})
 
 	@json
-	def handle_setName(self, request):
+	def handle_setPreferences(self, request):
 		if not 'userId' in request.session:
 			raise RuntimeError('Must be logged in.')
 		form = request.form()
-		name = form.getvalue('name')
+		username = form.getvalue('username')
+		public = form.getvalue('public')
+		if not username or not public:
+			raise RuntimeError('Missing preference(s).')
+		public = (public == 'true')
 		cursor = request.db().cursor()
-		cursor.execute('UPDATE users SET username=%s WHERE id=%s', (name, request.session['userId']))
-		request.session['username'] = name
+		cursor.execute('UPDATE users SET username=%s, public=%s WHERE id=%s', (username, public, request.session['userId']))
+		request.session['username'] = username
+		request.session['public'] = public
 		rows = cursor.rowcount
 		cursor.close()
 		request.saveSession()
@@ -674,7 +742,7 @@ if __name__ == '__main__':
 		request = Request({}, None)
 		cursor = request.db().cursor()
 		cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session VARCHAR(16), name VARCHAR(255), value BLOB, UNIQUE (session, name))')
-		cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTO_INCREMENT, secret TEXT, username TEXT, lastRefresh TIMESTAMP)')
+		cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTO_INCREMENT, secret TEXT, username TEXT, lastRefresh TIMESTAMP, public BOOLEAN DEFAULT FALSE)')
 		cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity VARCHAR(255), UNIQUE(user, identity))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(255), url VARCHAR(255), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(255) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')
