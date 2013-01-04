@@ -21,12 +21,12 @@ import base64
 import StringIO
 import sys
 import hashlib
-import robotparser
+from robotexclusionrulesparser import RobotExclusionRulesParser as RobotParser
 import urlparse
 
 dbArgs = {'user': 'news', 'passwd': 'news', 'db': 'news'}
-fetchRobotTime = 60 * 60 * 24
 userAgent = 'UnpromptedNews/1.0'
+useRobots = False
 
 def json(method):
 	method.contentType = 'application/json'
@@ -729,20 +729,25 @@ if __name__ == '__main__':
 
 				for url in urls:
 					if url:
-						robotUrl = urlparse.urlunparse(urlparse.urlparse(url)[:2] + ('robots.txt', '', '', ''))
-						if not robotUrl in robots:
-							robots[robotUrl] = robotparser.RobotFileParser(robotUrl)
-						robot = robots[robotUrl]
-						if robot.mtime() < time.time() - fetchRobotTime:
-							try:
-								robot.read()
-							except Exception, e:
-								print 'Failed to read %s: %s' % (robotUrl, e)
-						if robot.can_fetch(userAgent, url):
+						if useRobots:
+							robotUrl = urlparse.urlunparse(urlparse.urlparse(url)[:2] + ('robots.txt', '', '', ''))
+							if not robotUrl in robots:
+								robots[robotUrl] = RobotParser()
+								robots[robotUrl].user_agent = userAgent
+							robot = robots[robotUrl]
+							if robot.response_code == 0 or robot.is_expired:
+								try:
+									robot.fetch(robotUrl)
+								except Exception, e:
+									print 'Failed to read %s: %s' % (robotUrl, e)
+							robotAllowed = robot.is_allowed(userAgent, url)
+						if not useRobots or robotAllowed:
 							request = Request({'QUERY_STRING': 'feedUrl=' + urllib.quote(url), 'wsgi.input': ''}, startResponse)
 							print active, app.handle_fetchFeed(request)
 						else:
 							print 'Skipped because of robots.txt:', url
+							cursor = request.db().cursor()
+							cursor.execute('UPDATE feeds SET lastAttempt=%s WHERE url=%s', (datetime.datetime.now(), url))
 				if active:
 					time.sleep(5)
 				else:
