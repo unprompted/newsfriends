@@ -228,7 +228,15 @@ function loadUsers() {
 			$(row).append(td);
 
 			td = document.createElement('td');
-			$(td).text(user.isFriend ? "friends" : "not friends");
+			if (user.isFriend && user.isTheirFriend) {
+				$(td).text("mutual friends");
+			} else if (user.isFriend && !user.isTheirFriend) {
+				$(td).text("your friend");
+			} else if (!user.isFriend && user.isTheirFriend) {
+				$(td).text("you are their friend");
+			} else {
+				$(td).text("not friends");
+			}
 			$(row).append(td);
 
 			td = document.createElement('td');

@@ -326,13 +326,14 @@ class Application(object):
 			raise RuntimeError('Must be logged in.')
 		cursor = request.db().cursor()
 		cursor.execute('''
-			SELECT id, secret, username, public, friends.friend IS NOT NULL AS isFriend
+			SELECT id, secret, username, public, yourFriends.friend IS NOT NULL AS isFriend, theirFriends.user IS NOT NULL as isTheirFriend
 			FROM users
-			LEFT OUTER JOIN friends ON friends.user=%s AND users.id=friends.friend
-			WHERE (public OR friends.friend IS NOT NULL) AND id!=%s
+			LEFT OUTER JOIN friends AS yourFriends ON yourFriends.user=%s AND users.id=yourFriends.friend
+			LEFT OUTER JOIN friends AS theirFriends ON theirFriends.friend=%s AND users.id=theirFriends.user
+			WHERE (public OR yourFriends.friend IS NOT NULL OR theirFriends.user IS NOT NULL) AND id!=%s
 			ORDER BY NOT isFriend, username
 			''',
-			(request.session['userId'],) * 2)
+			(request.session['userId'],) * 3)
 		columnNames = [d[0] for d in cursor.description]
 		result = {'users': [dict(zip(columnNames, row)) for row in cursor]}
 		for user in result['users']:
