@@ -13,7 +13,12 @@ $(document).ready(function() {
 	$("#hide_errors").click(hideErrors);
 
 	makeMenu();
-	showSection("content_news");
+
+	if (document.location.hash) {
+		showSection('content_' + document.location.hash.substring(1));
+	} else {
+		showSection("content_news");
+	}
 });
 
 function selectArticle(index) {
@@ -76,6 +81,8 @@ function showSection(id) {
 	$(".content").hide();
 	$('#' + id).show();
 	$('#menu_' + id).addClass("selected");
+
+	document.location.hash = '#' + id.replace('content_', '');
 
 	if (gAuthenticated) {
 		if (id == "content_news") {
