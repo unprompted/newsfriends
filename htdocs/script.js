@@ -7,16 +7,10 @@ var gSelected = -1;
 
 $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
-	$("#refresh_feeds").click(refreshFeeds);
+	$("#refresh_feeds").click(loadNews);
 	$("#mark_all_read_feeds").click(markAllRead);
 	$("#user_apply").click(setPreferences);
 	$("#hide_errors").click(hideErrors);
-
-	if (gAuthenticated) {
-		loadSubscriptions();
-		loadNews();
-		loadUsers();
-	}
 
 	makeMenu();
 	showSection("content_news");
@@ -53,7 +47,7 @@ $(document).keypress(function(event) {
 					select--;
 				}
 			} else if (character == 'r') {
-				refreshFeeds();
+				loadNews();
 			} else if (character == 's') {
 				$("#articles").children().eq(select).trigger('toggleStarred');
 			}
@@ -82,6 +76,16 @@ function showSection(id) {
 	$(".content").hide();
 	$('#' + id).show();
 	$('#menu_' + id).addClass("selected");
+
+	if (gAuthenticated) {
+		if (id == "content_news") {
+			loadNews();
+		} else if (id == "content_friends") {
+			loadUsers();
+		} else if (id == "content_subscriptions") {
+			loadSubscriptions();
+		}
+	}
 }
 
 function makeSubscriptionNodes(subscription, indent) {
@@ -298,13 +302,6 @@ function markAllRead() {
 	}
 }
 
-function refreshFeeds() {
-	$("#articles").empty();
-	$("#feed_message").show();
-	$("#feed_message").text("Loading...");
-	loadNews();
-}
-
 function refreshFeedHandler() {
 	var subscription = gSubscriptionsToFetch.pop();
 	if (subscription != null) {
@@ -349,6 +346,9 @@ function hideErrors() {
 }
 
 function loadNews() {
+	$("#articles").empty();
+	$("#feed_message").show();
+	$("#feed_message").text("Loading...");
 	$.ajax({
 		type: "POST",
 		url: "getNews",
