@@ -2,6 +2,7 @@
 
 import os
 import MySQLdb as sql
+from MySQLdb.connections import IntegrityError
 import cgi
 from openid.consumer import consumer
 from openid.store.sqlstore import MySQLStore
@@ -403,6 +404,17 @@ class Application(object):
 		feed = feedparser.parse(StringIO.StringIO(document))
 		cursor = request.db().cursor()
 		try:
+			if 'title_detail' in feed.feed:
+				originalFeedTitle = makeHtml(feed.feed.title_detail)
+				index = 0
+				feedTitle = originalFeedTitle
+				while True:
+					try:
+						cursor.execute('UPDATE subscriptions SET name=%s WHERE url=%s AND name IS NULL', (feedTitle, feedUrl))
+						break
+					except IntegrityError:
+						index += 1
+						feedTitle = '%s (%d)' % (originalFeedTitle, index)
 			for entry in feed.entries:
 				entryTitle = 'No Title'
 				entryId = entry.id if 'id' in entry else None
@@ -716,37 +728,43 @@ application = app.handler
 
 if __name__ == '__main__':
 	if 'fetch' in sys.argv:
-		lastRefresh = None
+		lastRefresh = datetime.datetime.now()
 		while True:
 			try:
 				def startResponse(result, headers):
 					pass
 				request = Request({}, startResponse)
-				cursor = request.db().cursor()
 
+				cursor = request.db().cursor()
 				cursor.execute('SELECT MAX(lastRefresh) FROM users')
 				row = cursor.fetchone()
 				active = not lastRefresh or row and row[0] > lastRefresh
+				cursor.close()
 
 				lastRefresh = datetime.datetime.now()
 
-				if active:
-					cursor.execute('SELECT DISTINCT url FROM subscriptions WHERE url IS NOT NULL')
+				while True:
+					cursor = request.db().cursor()
+					cursor.execute('SELECT DISTINCT subscriptions.url FROM subscriptions LEFT OUTER JOIN feeds ON subscriptions.url=feeds.url WHERE subscriptions.url IS NOT NULL AND feeds.lastAttempt IS NULL')
 					urls = [row[0] for row in cursor]
-				else:
-					cursor.execute('SELECT DISTINCT subscriptions.url FROM subscriptions LEFT OUTER JOIN feeds ON subscriptions.url=feeds.url WHERE subscriptions.url IS NOT NULL ORDER BY feeds.lastAttempt LIMIT 1')
-					urls = [row[0] for row in cursor]
-				cursor.close()
+					reason = 'noLastAttempt'
 
-				for url in urls:
-					if url:
-						request = Request({'QUERY_STRING': 'feedUrl=' + urllib.quote(url), 'wsgi.input': ''}, startResponse)
-						print active, app.handle_fetchFeed(request)
-				if active:
-					time.sleep(5)
-				else:
-					print 'Inactive.  Sleeping.'
-					time.sleep(60)
+					if not urls:
+						cursor.execute('SELECT DISTINCT subscriptions.url FROM subscriptions LEFT OUTER JOIN feeds ON subscriptions.url=feeds.url WHERE subscriptions.url IS NOT NULL ORDER BY feeds.lastAttempt LIMIT 1')
+						urls = [row[0] for row in cursor]
+						reason = ['inactive', 'active'][active]
+					cursor.close()
+
+					for url in urls:
+						if url:
+							request = Request({'QUERY_STRING': 'feedUrl=' + urllib.quote(url), 'wsgi.input': ''}, startResponse)
+							print reason, app.handle_fetchFeed(request)
+
+					if not active or datetime.datetime.now() - lastRefresh > datetime.timedelta(minutes=5):
+						break
+
+				if not active:
+					time.sleep(15)
 			except KeyboardInterrupt:
 				print 'Terminated.'
 				break
