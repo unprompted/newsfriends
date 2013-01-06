@@ -781,7 +781,7 @@ if __name__ == '__main__':
 		cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity VARCHAR(255), UNIQUE(user, identity))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(255), url VARCHAR(255), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(255) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')
-		cursor.execute('CREATE TABLE IF NOT EXISTS articles (id VARCHAR(255) PRIMARY KEY, feed VARCHAR(255), title TEXT, summary TEXT, link TEXT, published TIMESTAMP)')
+		cursor.execute('CREATE TABLE IF NOT EXISTS articles (id VARCHAR(255), feed VARCHAR(255), title TEXT, summary TEXT, link TEXT, published TIMESTAMP, UNIQUE(id, feed))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS statuses (feed VARCHAR(255), article VARCHAR(255), user INTEGER, share INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(feed, article, user, share))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS shares (id INTEGER PRIMARY KEY AUTO_INCREMENT, article VARCHAR(255), feed VARCHAR(255), user INTEGER, note TEXT, UNIQUE(article, feed, user))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS friends (user INTEGER, friend INTEGER, UNIQUE(user, friend))')
