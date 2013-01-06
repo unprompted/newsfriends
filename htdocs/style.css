@@ -114,12 +114,14 @@ table.wide td,th {
 }
 
 .article .heading {
+	min-height: 24px;
 	white-space: nowrap;
 	padding: 2px;
 	cursor: pointer;
 }
 
 .article .heading .feedName {
+	min-height: 24px;
 	float: left;
 	width: 192px;
 	max-width: 192px;
@@ -128,6 +130,7 @@ table.wide td,th {
 }
 
 .article .heading .title {
+	min-height: 24px;
 	font-weight: bold;
 	padding: 2px;
 }
@@ -177,4 +180,27 @@ input.comments {
 }
 
 .comments .comment {
+}
+
+div.iconButton {
+	background-position: 0px;
+	width: 24px;
+	height: 24px;
+	vertical-align: middle;
+	cursor: pointer;
+	border: 0;
+	display: inline-block;
+}
+
+div.iconButton.selected {
+	background-position: 48px;
+}
+
+div.iconButton:hover {
+	background-position: 24px;
+}
+
+div.iconButton.star {
+	background-image: url(images/star.png);
+	float: left;
 }

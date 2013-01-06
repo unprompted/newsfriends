@@ -410,6 +410,8 @@ function makeArticleNode(article) {
 
 	var headingDiv = document.createElement('div');
 	$(headingDiv).addClass("heading");
+	var starredButton = $('<div class="iconButton star" />');
+	$(headingDiv).append(starredButton);
 	var feedName = document.createElement('span');
 	$(feedName).addClass("feedName");
 	if (article.feedName) {
@@ -466,8 +468,6 @@ function makeArticleNode(article) {
 	$(expand).append(summaryDiv);
 	var readButton = $('<input type="button"></input>');
 	$(expand).append(readButton);
-	var starredButton = $('<input type="button"></input>');
-	$(expand).append(starredButton);
 	var shareNote = $('<input type="text"></input>');
 	$(expand).append(shareNote);
 	var shareButton = $('<input type="button"></input>');
@@ -534,7 +534,11 @@ function makeArticleNode(article) {
 		$(readButton).val(article.isRead ? "Mark Unread" : "Mark Read");
 	}
 	function updateStarredButton(article, starredButton) {
-		$(starredButton).val(article.starred ? "Remove Star" : "Add Star");
+		if (article.starred) {
+			$(starredButton).addClass("selected");
+		} else {
+			$(starredButton).removeClass("selected");
+		}
 	}
 	function updateShareButton(article, shareButton) {
 		$(shareButton).val(article.shared ? "Unshare" : "Share");
