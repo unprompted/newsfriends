@@ -422,6 +422,12 @@ function makeArticleNode(article) {
 		$(feedName).text("???");
 	}
 	$(headingDiv).append(feedName);
+	if (article.published) {
+		var publishedSpan = document.createElement('span');
+		$(publishedSpan).addClass("date");
+		$(publishedSpan).text(new Date(article.published * 1000).toLocaleString());
+		$(headingDiv).append(publishedSpan);
+	}
 	var subjectDiv = document.createElement('span');
 	$(subjectDiv).addClass("title");
 	$(subjectDiv).text(article.title);

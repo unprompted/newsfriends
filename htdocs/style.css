@@ -133,6 +133,16 @@ table.wide td,th {
 	min-height: 24px;
 	font-weight: bold;
 	padding: 2px;
+	display: block;
+	overflow: hidden;
+}
+
+.article .heading .date {
+	min-height: 24px;
+	float: right;
+	color: #888;
+	overflow: hidden;
+	font-size: xx-small;
 }
 
 .article .expand .title {

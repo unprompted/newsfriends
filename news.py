@@ -522,7 +522,7 @@ class Application(object):
 			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=-1
 			LEFT OUTER JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
 			WHERE (subscriptions.user=%s AND subscriptions.url=articles.feed) AND (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
-			ORDER BY articles.published DESC LIMIT %s
+			ORDER BY starred DESC, articles.published DESC LIMIT %s
 			''',
 			[request.session['userId']] * 3 + [resultLimit + 1])
 
@@ -549,7 +549,7 @@ class Application(object):
 			JOIN users ON users.id=shares.user
 			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
 			WHERE (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
-			ORDER BY articles.published DESC LIMIT %s
+			ORDER BY starred DESC, articles.published DESC LIMIT %s
 			''', [request.session['userId']] * 2 + [resultLimit + 1])
 		columnNames = [d[0] for d in cursor.description]
 		sharedItems = [dict(zip(columnNames, row)) for row in cursor]
