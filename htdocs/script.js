@@ -122,6 +122,28 @@ function makeSubscriptionNodes(subscription, indent) {
 		} else if (subscription.lastUpdate) {
 			$(td).text("Last updated: " + new Date(subscription.lastUpdate * 1000));
 		}
+		if (subscription.recommendedUrl) {
+			var div = document.createElement('div');
+			$(div).css('color', 'red');
+			$(div).text('Recommended URL: ' + subscription.recommendedUrl);
+			$(td).append(div);
+
+			var button = document.createElement('input');
+			$(button).attr('type', 'button');
+			$(button).attr('value', 'Fix URL');
+			$(button).click(function() {
+				$.ajax({
+					type: "POST",
+					url: "updateSubscription",
+					data: { subscription: subscription.feedUrl, url: subscription.recommendedUrl },
+					dataType: 'json',
+				}).done(function(data) {
+					updateError(data);
+					loadSubscriptions();
+				});
+			});
+			$(td).append(button);
+		}
 		$(tr).append(td);
 
 		td = document.createElement('td');

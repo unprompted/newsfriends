@@ -22,6 +22,7 @@ import base64
 import StringIO
 import sys
 import hashlib
+import urlparse
 
 dbArgs = {'user': 'news', 'passwd': 'news', 'db': 'news'}
 userAgent = 'UnpromptedNews/1.0'
@@ -303,12 +304,41 @@ class Application(object):
 		return self.json(request, result)
 
 	@json
+	def handle_updateSubscription(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		form = request.form()
+		subscription = form.getvalue('subscription')
+		if not subscription:
+			raise RuntimeError('Missing subscription.')
+		keys = form.keys()
+		keys.remove('subscription')
+		allowedKeys = ('name', 'url')
+		for key in keys:
+			if not key in allowedKeys:
+				raise RuntimeError('Invalid key: ' + key)
+		values = [form.getvalue(key) for key in keys]
+		# Clear recommendedUrl if we're updating url, as it was only
+		# relevant for the old URL and will be updated when fetching.
+		if 'url' in keys:
+			keys.append('recommendedUrl')
+			values.append(None)
+		cursor = request.db().cursor()
+		cursor.execute(
+			'UPDATE subscriptions SET %s WHERE user=%%s AND url=%%s' % ', '.join('%s=%%s' % (key,) for key in keys),
+			values + [request.session['userId'], subscription])
+		rows = cursor.rowcount
+		cursor.close()
+		request.db().commit()
+		return self.json(request, {'affectedRows': rows})
+
+	@json
 	def handle_getSubscriptions(self, request):
 		if not 'userId' in request.session:
 			raise RuntimeError('Must be logged in.')
 		cursor = request.db().cursor()
 		cursor.execute('''
-			SELECT id, user, name, subscriptions.url AS feedUrl, parent, feeds.error, feeds.lastAttempt, feeds.lastUpdate
+			SELECT id, user, name, subscriptions.url AS feedUrl, recommendedUrl, parent, feeds.error, feeds.lastAttempt, feeds.lastUpdate
 			FROM subscriptions
 			LEFT OUTER JOIN feeds ON feeds.url=subscriptions.url
 			WHERE user=%s
@@ -434,6 +464,14 @@ class Application(object):
 					if 'published_parsed' in entry and entry.published_parsed:
 						entryPublished = datetime.datetime.fromtimestamp(time.mktime(entry.published_parsed))
 					cursor.execute('REPLACE INTO articles (id, feed, title, summary, link, published) VALUES (%s, %s, %s, %s, %s, %s)', (entryId, feedUrl, entryTitle, entrySummary, entryLink, entryPublished))
+			if not feed.entries and 'html' in feed.feed and 'links' in feed.feed:
+				recommendedUrl = None
+				for link in feed.feed.links:
+					if link.type == 'application/atom+xml' or link.type == 'application/rss+xml':
+						recommendedUrl = urlparse.urljoin(feedUrl, link.href)
+						break
+				if recommendedUrl:
+					cursor.execute('UPDATE subscriptions SET recommendedUrl=%s WHERE url=%s', (recommendedUrl, feedUrl))
 		finally:
 			cursor.close()
 			request.db().commit()
@@ -779,7 +817,7 @@ if __name__ == '__main__':
 		cursor.execute('CREATE TABLE IF NOT EXISTS sessions (session VARCHAR(16), name VARCHAR(255), value BLOB, UNIQUE (session, name))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTO_INCREMENT, secret TEXT, username TEXT, lastRefresh TIMESTAMP, public BOOLEAN DEFAULT FALSE)')
 		cursor.execute('CREATE TABLE IF NOT EXISTS identities (user INTEGER, identity VARCHAR(255), UNIQUE(user, identity))')
-		cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(255), url VARCHAR(255), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
+		cursor.execute('CREATE TABLE IF NOT EXISTS subscriptions (id INTEGER PRIMARY KEY AUTO_INCREMENT, user INTEGER, name VARCHAR(255), url VARCHAR(255), recommendedUrl VARCHAR(255), parent INTEGER, UNIQUE(user, url), UNIQUE(user, name))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS feeds (url VARCHAR(255) PRIMARY KEY, lastAttempt TIMESTAMP, error TEXT, document MEDIUMTEXT, lastUpdate TIMESTAMP)')
 		cursor.execute('CREATE TABLE IF NOT EXISTS articles (id VARCHAR(255), feed VARCHAR(255), title TEXT, summary TEXT, link TEXT, published TIMESTAMP, UNIQUE(id, feed))')
 		cursor.execute('CREATE TABLE IF NOT EXISTS statuses (feed VARCHAR(255), article VARCHAR(255), user INTEGER, share INTEGER, isRead BOOLEAN, starred BOOLEAN, UNIQUE(feed, article, user, share))')
