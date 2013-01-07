@@ -498,76 +498,123 @@ class Application(object):
 	def handle_getNews(self, request):
 		if not 'userId' in request.session:
 			raise RuntimeError('Must be logged in.')
-		news = {'items': []}
-		cursor = request.db().cursor()
+		form = request.form()
+		what = form.getvalue('what', 'unread')
 
+		news = {'items': []}
+		times = {}
+
+		cursor = request.db().cursor()
 		resultLimit = 100
 
-		times = {}
-		times['unread'] = -time.time()
-		cursor.execute('''
-			SELECT
-				articles.id AS id,
-				articles.feed AS feed,
-				subscriptions.name AS feedName,
-				articles.title AS title,
-				articles.summary AS summary,
-				articles.link AS link,
-				articles.published AS published,
-				statuses.isRead AS isRead,
-				statuses.starred AS starred,
-				shares.id IS NOT NULL AS shared,
-				shares.id AS share,
-				NULL AS sharedUser,
-				NULL AS sharedNote
-			FROM subscriptions
-			JOIN articles ON subscriptions.url=articles.feed
-			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=-1
-			LEFT OUTER JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
-			WHERE (subscriptions.user=%s) AND (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
-			ORDER BY starred DESC, articles.published DESC LIMIT %s
-			''',
-			[request.session['userId']] * 3 + [resultLimit + 1])
-		times['unread'] += time.time()
-
-		columnNames = [d[0] for d in cursor.description]
-		unreadItems = [dict(zip(columnNames, row)) for row in cursor]
-
-		times['shared'] = -time.time()
-		cursor.execute('''
-			SELECT
-				articles.id AS id,
-				articles.feed AS feed,
-				articles.title AS title,
-				articles.summary AS summary,
-				articles.link AS link,
-				articles.published AS published,
-				statuses.isRead AS isRead,
-				statuses.starred AS starred,
-				FALSE AS shared,
-				shares.id AS share,
-				users.username AS sharedBy,
-				shares.note AS sharedNote
-			FROM articles
-			JOIN shares ON shares.feed=articles.feed AND shares.article=articles.id
-			JOIN friends ON friends.user=%s AND friends.friend=shares.user
-			JOIN users ON users.id=shares.user
-			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
-			WHERE (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
-			ORDER BY starred DESC, articles.published DESC LIMIT %s
-			''', [request.session['userId']] * 2 + [resultLimit + 1])
-		columnNames = [d[0] for d in cursor.description]
-		sharedItems = [dict(zip(columnNames, row)) for row in cursor]
-		times['shared'] += time.time()
-
-		allItems = []
-		while unreadItems and sharedItems:
-			if unreadItems[0]['published'] < sharedItems[0]['published']:
-				allItems.append(unreadItems.pop(0))
+		if what in ('unread', 'all'):
+			times['unread'] = -time.time()
+			if what == 'unread':
+				condition = 'NOT statuses.isRead OR statuses.isRead IS NULL'
 			else:
-				allItems.append(sharedItems.pop(0))
-		allItems += unreadItems
-		allItems += sharedItems
+				condition = 'TRUE'
+			cursor.execute('''
+				SELECT
+					articles.id AS id,
+					articles.feed AS feed,
+					subscriptions.name AS feedName,
+					articles.title AS title,
+					articles.summary AS summary,
+					articles.link AS link,
+					articles.published AS published,
+					statuses.isRead AS isRead,
+					statuses.starred AS starred,
+					shares.id IS NOT NULL AS shared,
+					shares.id AS share,
+					NULL AS sharedBy,
+					NULL AS sharedNote
+				FROM subscriptions
+				JOIN articles ON subscriptions.url=articles.feed
+				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=-1
+				LEFT OUTER JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
+				WHERE (subscriptions.user=%s) AND (__CONDITION__ OR statuses.starred)
+				ORDER BY starred DESC, articles.published DESC LIMIT %s
+				'''.replace('__CONDITION__', condition),
+				[request.session['userId']] * 3 + [resultLimit + 1])
+			times['unread'] += time.time()
+
+			columnNames = [d[0] for d in cursor.description]
+			unreadItems = [dict(zip(columnNames, row)) for row in cursor]
+
+			times['sharedWithMe'] = -time.time()
+			cursor.execute('''
+				SELECT
+					articles.id AS id,
+					articles.feed AS feed,
+					subscriptions.name AS feedName,
+					articles.title AS title,
+					articles.summary AS summary,
+					articles.link AS link,
+					articles.published AS published,
+					statuses.isRead AS isRead,
+					statuses.starred AS starred,
+					FALSE AS shared,
+					shares.id AS share,
+					users.username AS sharedBy,
+					shares.note AS sharedNote
+				FROM articles
+				JOIN shares ON shares.feed=articles.feed AND shares.article=articles.id
+				JOIN friends ON friends.user=%s AND friends.friend=shares.user
+				JOIN users ON users.id=shares.user
+				JOIN subscriptions ON subscriptions.url=shares.feed AND subscriptions.user=friends.user
+				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
+				WHERE (__CONDITION__ OR statuses.starred)
+				ORDER BY starred DESC, articles.published DESC LIMIT %s
+				'''.replace('__CONDITION__', condition),
+				[request.session['userId']] * 2 + [resultLimit + 1])
+			columnNames = [d[0] for d in cursor.description]
+			sharedItems = [dict(zip(columnNames, row)) for row in cursor]
+			times['sharedWithMe'] += time.time()
+
+			# Sort items so that starred items come first and then
+			# everything is sorted by date after that.
+			allItems = []
+			while unreadItems and sharedItems:
+				if unreadItems[0]['starred'] != sharedItems[0]['starred']:
+					if unreadItems[0]['starred']:
+						allItems.append(unreadItems.pop(0))
+					else:
+						allItems.append(sharedItems.pop(0))
+				elif unreadItems[0]['published'] >= sharedItems[0]['published']:
+					allItems.append(unreadItems.pop(0))
+				else:
+					allItems.append(sharedItems.pop(0))
+			allItems += unreadItems
+			allItems += sharedItems
+		elif what == 'shared':
+			times['shared'] = -time.time()
+			cursor.execute('''
+				SELECT
+					articles.id AS id,
+					articles.feed AS feed,
+					subscriptions.name AS feedName,
+					articles.title AS title,
+					articles.summary AS summary,
+					articles.link AS link,
+					articles.published AS published,
+					statuses.isRead AS isRead,
+					statuses.starred AS starred,
+					TRUE AS shared,
+					shares.id AS share,
+					users.username AS sharedBy,
+					shares.note AS sharedNote
+				FROM articles
+				JOIN subscriptions ON subscriptions.url=articles.feed AND subscriptions.user=%s
+				JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
+				JOIN users ON users.id=%s
+				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
+				ORDER BY starred DESC, articles.published DESC LIMIT %s
+				''', [request.session['userId']] * 4 + [resultLimit + 1])
+			columnNames = [d[0] for d in cursor.description]
+			allItems = [dict(zip(columnNames, row)) for row in cursor]
+			times['shared'] += time.time()
+		else:
+			raise RuntimeError("Can't list '%s' items." % (what,))
 
 		news['items'] = allItems[:resultLimit]
 		for newsItem in news['items']:

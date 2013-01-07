@@ -5,6 +5,7 @@ var gSubscriptionsToFetchCount = 0;
 var gSubscriptionsFetchedCount = 0;
 var gSelected = -1;
 var gNews = [];
+var gNewsToLoad = 'unread';
 
 $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
@@ -74,6 +75,29 @@ function makeMenu() {
 		});
 		$(div).attr("id", "menu_" + id);
 		$("#menu").append(div);
+
+		if (id == "content_news") {
+			var subMenu = document.createElement('div');
+			var item = document.createElement('div');
+			$(item).text("Unread Items");
+			$(item).attr('id', 'submenu_news_unread');
+			$(item).click(function() { newsSubMenu('unread'); });
+			$(item).addClass("subMenu");
+			$(subMenu).append(item);
+			item = document.createElement('div');
+			$(item).text("All Items");
+			$(item).attr('id', 'submenu_news_all');
+			$(item).click(function() { newsSubMenu('all'); });
+			$(item).addClass("subMenu");
+			$(subMenu).append(item);
+			item = document.createElement('div');
+			$(item).text("Shared Items");
+			$(item).attr('id', 'submenu_news_shared');
+			$(item).click(function() { newsSubMenu('shared'); });
+			$(item).addClass("subMenu");
+			$(subMenu).append(item);
+			$("#menu").append(subMenu);
+		}
 	});
 }
 
@@ -87,13 +111,20 @@ function showSection(id) {
 
 	if (gAuthenticated) {
 		if (id == "content_news") {
-			loadNews();
+			newsSubMenu(gNewsToLoad);
 		} else if (id == "content_friends") {
 			loadUsers();
 		} else if (id == "content_subscriptions") {
 			loadSubscriptions();
 		}
 	}
+}
+
+function newsSubMenu(section) {
+	gNewsToLoad = section;
+	loadNews();
+	$(".subMenu").removeClass("selected");
+	$("#submenu_news_" + section).addClass("selected");
 }
 
 function makeSubscriptionNodes(subscription, indent) {
@@ -390,7 +421,7 @@ function loadNews() {
 	$.ajax({
 		type: "POST",
 		url: "getNews",
-		data: {},
+		data: {'what': gNewsToLoad},
 		dataType: 'json',
 		timeout: 15000,
 	}).done(function(data) {
@@ -403,6 +434,12 @@ function loadNews() {
 		data.items.forEach(function(article) {
 			$("#articles").append(makeArticleNode(article));
 		});
+		if (data.items.length == 0) {
+			$("#articles").append("<div class='noNewsIsGoodNews'>You've read all of the news that there is.  Good job!</div>");
+		}
+		if (data.more) {
+			$("#articles").append("<div class='moreNews'>There is more news to be read, but there's no way to access it right now.  Maybe read some of the news above first and refresh to get more.</div>");
+		}
 	});
 }
 
