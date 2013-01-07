@@ -503,6 +503,8 @@ class Application(object):
 
 		resultLimit = 100
 
+		times = {}
+		times['unread'] = -time.time()
 		cursor.execute('''
 			SELECT
 				articles.id AS id,
@@ -518,17 +520,20 @@ class Application(object):
 				shares.id AS share,
 				NULL AS sharedUser,
 				NULL AS sharedNote
-			FROM subscriptions, articles
+			FROM subscriptions
+			JOIN articles ON subscriptions.url=articles.feed
 			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=-1
 			LEFT OUTER JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
-			WHERE (subscriptions.user=%s AND subscriptions.url=articles.feed) AND (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
+			WHERE (subscriptions.user=%s) AND (NOT statuses.isRead OR statuses.isRead IS NULL OR statuses.starred)
 			ORDER BY starred DESC, articles.published DESC LIMIT %s
 			''',
 			[request.session['userId']] * 3 + [resultLimit + 1])
+		times['unread'] += time.time()
 
 		columnNames = [d[0] for d in cursor.description]
 		unreadItems = [dict(zip(columnNames, row)) for row in cursor]
 
+		times['shared'] = -time.time()
 		cursor.execute('''
 			SELECT
 				articles.id AS id,
@@ -553,6 +558,7 @@ class Application(object):
 			''', [request.session['userId']] * 2 + [resultLimit + 1])
 		columnNames = [d[0] for d in cursor.description]
 		sharedItems = [dict(zip(columnNames, row)) for row in cursor]
+		times['shared'] += time.time()
 
 		allItems = []
 		while unreadItems and sharedItems:
@@ -568,6 +574,7 @@ class Application(object):
 			if 'share' in newsItem and newsItem['share']:
 				newsItem['comments'] = self.getComments(cursor, newsItem['share'])
 		news['more'] = len(allItems) > resultLimit
+		news['times'] = times
 
 		cursor.execute('UPDATE users SET lastRefresh=NOW() WHERE id=%s', (request.session['userId'],))
 		cursor.close()

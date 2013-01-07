@@ -4,6 +4,7 @@ var gWorkerCount = 0;
 var gSubscriptionsToFetchCount = 0;
 var gSubscriptionsFetchedCount = 0;
 var gSelected = -1;
+var gNews = [];
 
 $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
@@ -394,6 +395,7 @@ function loadNews() {
 		timeout: 15000,
 	}).done(function(data) {
 		updateError(data);
+		gNews = data;
 		gSelected = -1;
 		$("#articles").empty();
 		$("#feed_message").hide();
