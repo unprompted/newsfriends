@@ -575,7 +575,7 @@ class Application(object):
 		return self.json(request, news)
 
 	def getComments(self, cursor, share):
-		cursor.execute('SELECT users.username, comments.comment, comments.time FROM comments, users WHERE comments.share=%s AND comments.user=users.id', (share,))
+		cursor.execute('SELECT users.username, comments.comment, comments.time FROM comments, users WHERE comments.share=%s AND comments.user=users.id ORDER by comments.time', (share,))
 		columnNames = [d[0] for d in cursor.description]
 		return [dict(zip(columnNames, row)) for row in cursor]
 
