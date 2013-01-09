@@ -346,6 +346,18 @@ class Application(object):
 			(request.session['userId'],))
 		columnNames = [d[0] for d in cursor.description]
 		result = {'subscriptions': [dict(zip(columnNames, row)) for row in cursor]}
+		for subscription in result['subscriptions']:
+			if subscription['feedUrl']:
+				cursor.execute('''
+					SELECT COUNT(*)
+					FROM articles
+					LEFT OUTER JOIN statuses ON statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.user=%s
+					WHERE articles.feed=%s AND (NOT statuses.isRead OR statuses.isRead IS NULL)
+					''',
+					(request.session['userId'], subscription['feedUrl'],))
+				subscription['unreadCount'] = cursor.fetchone()[0]
+			else:
+				subscription['unreadCount'] = 0
 		cursor.close()
 		return self.json(request, result)
 
@@ -500,8 +512,9 @@ class Application(object):
 		form = request.form()
 		what = form.getvalue('what', 'unread')
 
-		news = {'items': []}
+		news = {'items': [], 'feeds': form.getlist('feeds[]')}
 		times = {}
+		feeds = form.getlist('feeds[]')
 
 		cursor = request.db().cursor()
 		resultLimit = 100
@@ -512,6 +525,12 @@ class Application(object):
 				condition = 'NOT statuses.isRead OR statuses.isRead IS NULL'
 			else:
 				condition = 'TRUE'
+			if len(feeds) > 1:
+				feedCondition = 'articles.feed IN (%s)' % (', '.join('%s' for feed in feeds))
+			elif len(feeds) == 1:
+				feedCondition = 'articles.feed=%s'
+			else:
+				feedCondition = 'TRUE'
 			cursor.execute('''
 				SELECT
 					articles.id AS id,
@@ -531,10 +550,10 @@ class Application(object):
 				JOIN articles ON subscriptions.url=articles.feed
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=-1
 				LEFT OUTER JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
-				WHERE (subscriptions.user=%s) AND (__CONDITION__ OR statuses.starred)
+				WHERE (subscriptions.user=%s) AND (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
-				'''.replace('__CONDITION__', condition),
-				[request.session['userId']] * 3 + [resultLimit + 1])
+				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
+				[request.session['userId']] * 3 + feeds + [resultLimit + 1])
 			times['unread'] += time.time()
 
 			columnNames = [d[0] for d in cursor.description]
@@ -562,10 +581,10 @@ class Application(object):
 				JOIN users ON users.id=shares.user
 				JOIN subscriptions ON subscriptions.url=shares.feed AND subscriptions.user=friends.user
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
-				WHERE (__CONDITION__ OR statuses.starred)
+				WHERE (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
-				'''.replace('__CONDITION__', condition),
-				[request.session['userId']] * 2 + [resultLimit + 1])
+				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
+				[request.session['userId']] * 2 + feeds + [resultLimit + 1])
 			columnNames = [d[0] for d in cursor.description]
 			sharedItems = [dict(zip(columnNames, row)) for row in cursor]
 			times['sharedWithMe'] += time.time()

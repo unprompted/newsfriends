@@ -245,3 +245,12 @@ div.iconButton.star {
 	padding: 1em;
 	color: #000;
 }
+
+.subscriptionTree div {
+	padding-left: 8px;
+	cursor: pointer;
+}
+
+.subscriptionTree div.selected {
+	color: #f00;
+}
