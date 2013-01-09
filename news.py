@@ -579,7 +579,7 @@ class Application(object):
 				JOIN shares ON shares.feed=articles.feed AND shares.article=articles.id
 				JOIN friends ON friends.user=%s AND friends.friend=shares.user
 				JOIN users ON users.id=shares.user
-				JOIN subscriptions ON subscriptions.url=shares.feed AND subscriptions.user=friends.user
+				JOIN subscriptions ON subscriptions.url=shares.feed AND subscriptions.user=friends.friend
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
 				WHERE (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
