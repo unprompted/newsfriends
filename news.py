@@ -631,6 +631,34 @@ class Application(object):
 			columnNames = [d[0] for d in cursor.description]
 			allItems = [dict(zip(columnNames, row)) for row in cursor]
 			times['shared'] += time.time()
+		elif what == 'friends':
+			times['friends'] = -time.time()
+			cursor.execute('''
+				SELECT
+					articles.id AS id,
+					articles.feed AS feed,
+					subscriptions.name AS feedName,
+					articles.title AS title,
+					articles.summary AS summary,
+					articles.link AS link,
+					articles.published AS published,
+					statuses.isRead AS isRead,
+					statuses.starred AS starred,
+					TRUE AS shared,
+					shares.id AS share,
+					users.username AS sharedBy,
+					shares.note AS sharedNote
+				FROM users
+				JOIN friends ON users.id=friends.friend AND friends.user=%s
+				JOIN subscriptions ON subscriptions.user=users.id
+				JOIN shares ON shares.user=friends.friend AND shares.feed=subscriptions.url
+				JOIN articles ON shares.feed=articles.feed AND shares.article=articles.id
+				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
+				ORDER BY starred DESC, articles.published DESC LIMIT %s
+				''', [request.session['userId']] * 2 + [resultLimit + 1])
+			columnNames = [d[0] for d in cursor.description]
+			allItems = [dict(zip(columnNames, row)) for row in cursor]
+			times['friends'] += time.time()
 		else:
 			raise RuntimeError("Can't list '%s' items." % (what,))
 

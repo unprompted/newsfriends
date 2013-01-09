@@ -98,6 +98,12 @@ function makeMenu() {
 			$(item).click(function() { newsSubMenu('shared'); });
 			$(item).addClass("subMenu");
 			$(subMenu).append(item);
+			item = document.createElement('div');
+			$(item).text("Items from Friends");
+			$(item).attr('id', 'submenu_news_friends');
+			$(item).click(function() { newsSubMenu('friends'); });
+			$(item).addClass("subMenu");
+			$(subMenu).append(item);
 			$("#menu").append(subMenu);
 		}
 	});
