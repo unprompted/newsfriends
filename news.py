@@ -27,6 +27,7 @@ import urlparse
 dbArgs = {'user': 'news', 'passwd': 'news', 'db': 'news'}
 userAgent = 'UnpromptedNews/1.0'
 useRobots = False
+realm = 'http://www.unprompted.com/news'
 
 def json(method):
 	method.contentType = 'application/json'
@@ -196,13 +197,12 @@ class Application(object):
 		openidUrl = form.getvalue('openid_identifier')
 		oid = request.consumer()
 		oidRequest = oid.begin(openidUrl)
-		trustUrl = request.indexUrl()
 		returnTo = os.path.join(request.indexUrl(), 'process')
 		if oidRequest.shouldSendRedirect():
-			redirectUrl = oidRequest.redirectURL(trustUrl, returnTo, immediate=False)
+			redirectUrl = oidRequest.redirectURL(realm, returnTo, immediate=False)
 			return self.redirect(request, redirectUrl)
 		else:
-			result = oidRequest.htmlMarkup(trustUrl, returnTo, form_tag_attrs={'id': 'openid_message'}, immediate=False)
+			result = oidRequest.htmlMarkup(realm, returnTo, form_tag_attrs={'id': 'openid_message'}, immediate=False)
 			request.startResponse('200 OK', [
 				('Content-Type', 'text/html'),
 				('Content-Length', str(len(result))),
@@ -217,8 +217,7 @@ class Application(object):
 		for key in form:
 			fields[key] = form.getvalue(key)
 		oid = request.consumer()
-		trustUrl = request.indexUrl()
-		info = oid.complete(fields, os.path.join(trustUrl, 'process'))
+		info = oid.complete(fields, os.path.join(request.indexUrl(), 'process'))
 
 		if info.status == consumer.FAILURE and info.getDisplayIdentifier():
 			raise RuntimeError('Verification of %s failed: %s' % (cgi.escape(info.getDisplayIdentifier()), info.message))
