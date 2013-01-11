@@ -557,6 +557,15 @@ function loadNews() {
 	});
 }
 
+function updateUnreadCount(feedUrl, count) {
+	gSubscriptions.forEach(function(subscription) {
+		if (subscription.feedUrl == feedUrl) {
+			subscription.unreadCount += count;
+		}
+	});
+	makeSubscriptionTree();
+}
+
 function makeArticleNode(article) {
 	var entryDiv = document.createElement('div');
 	$(entryDiv).addClass('article');
@@ -705,6 +714,7 @@ function makeArticleNode(article) {
 	function entryUpdated(data) {
 		updateError(data);
 		if ('isRead' in data) {
+			updateUnreadCount(article.feed, article.isRead - data.isRead);
 			article.isRead = data['isRead'];
 			updateReadButton(article, readButton);
 		}
