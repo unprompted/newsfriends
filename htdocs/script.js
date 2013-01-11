@@ -8,6 +8,7 @@ var gNews = [];
 var gNewsToLoad = 'unread';
 var gSubscriptionTree = null;
 var gSelectedSubscription = null;
+var gShowOnlyUnreadSubscriptions = true;
 
 $(document).ready(function() {
 	$("#add_subscription").click(addSubscription);
@@ -222,11 +223,12 @@ function makeSubscriptionNodes(subscription, indent) {
 	return nodes;
 }
 
-function makeSubscriptionTreeNode(subscription) {
+function makeSubscriptionTreeNode(parent, subscription) {
 	var div = document.createElement('div');
 	$(div).text(subscription.name || subscription.feedUrl);
 	if (subscription.unreadCount > 0) {
 		$(div).text($(div).text() + " (" + subscription.unreadCount + ")");
+		$(div).addClass("unread");
 	}
 	var children = [];
 	gSubscriptions.forEach(function(other) {
@@ -235,8 +237,9 @@ function makeSubscriptionTreeNode(subscription) {
 		}
 	});
 	children.sort(function(a, b) { return a.name < b.name; });
+	var totalUnreadCount = subscription.unreadCount;
 	children.forEach(function(child) {
-		$(div).append(makeSubscriptionTreeNode(child));
+		totalUnreadCount += makeSubscriptionTreeNode(div, child);
 	});
 	$(div).click(function(event) {
 		if ($(div).hasClass("selected")) {
@@ -247,22 +250,34 @@ function makeSubscriptionTreeNode(subscription) {
 			$(div).addClass("selected");
 			gSelectedSubscription = subscription;
 		}
+		loadNews();
 		event.stopPropagation();
 	});
 	if (gSelectedSubscription != null && subscription.id == gSelectedSubscription.id) {
 		$(div).addClass("selected");
 		gSelectedSubscription = subscription;
 	}
-	return div;
+
+	if (!gShowOnlyUnreadSubscriptions || totalUnreadCount > 0) {
+		$(parent).append(div);
+	}
+	return totalUnreadCount;
 }
 
 function makeSubscriptionTree() {
 	$(gSubscriptionTree).empty();
-	$(gSubscriptionTree).append('<div>Subscriptions</div>');
+	var div = document.createElement('div');
+	$(div).addClass('subscriptionTreeHeading');
+	$(div).text(gShowOnlyUnreadSubscriptions ? "Unread Subscriptions" : "All Subscriptions");
+	$(div).click(function() {
+		gShowOnlyUnreadSubscriptions = !gShowOnlyUnreadSubscriptions;
+		loadSubscriptions();
+	});
+	$(gSubscriptionTree).append(div);
 
 	gSubscriptions.forEach(function(subscription) {
 		if (subscription.parent == null) {
-			$(gSubscriptionTree).append(makeSubscriptionTreeNode(subscription));
+			 makeSubscriptionTreeNode(gSubscriptionTree, subscription);
 		}
 	});
 }
@@ -270,6 +285,10 @@ function makeSubscriptionTree() {
 function loadSubscriptions() {
 	$("#subscriptions").empty();
 	$("#subscriptions").append("<li>Loading...</li>");
+
+	$(gSubscriptionTree).empty();
+	$(gSubscriptionTree).append('<div>Loading subscriptions...</div>');
+
 	$.ajax({
 		type: "POST",
 		url: "getSubscriptions",
