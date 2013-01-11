@@ -10,22 +10,21 @@ body {
 }
 
 #main {
+	width: 100%;
+	max-width: 100%;
 	margin: 0;
 	padding: 0;
 	background-color: #ddd;
+	display: table;
 }
 
 #sidebar {
 	margin: 0;
 	padding: 8px;
-	float: left;
 	width: 240px;
 	background-color: #888;
 	word-wrap: break-word;
-}
-
-#container {
-	margin-left: 256px;
+	display: table-cell;
 }
 
 #content {
@@ -34,6 +33,7 @@ body {
 	height: 100%;
 	background-color: #222;
 	color: #fff;
+	display: table-cell;
 }
 
 .article {
