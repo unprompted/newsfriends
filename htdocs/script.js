@@ -113,13 +113,21 @@ function makeMenu() {
 	$(gSubscriptionTree).addClass("subscriptionTree");
 }
 
-function showSection(id) {
+function showSectionNoLoad(id) {
 	$(".menu").removeClass("selected");
 	$(".content").hide();
 	$('#' + id).show();
 	$('#menu_' + id).addClass("selected");
 
+	if (id != 'content_news') {
+		$(".subMenu").removeClass("selected");
+	}
+
 	document.location.hash = '#' + id.replace('content_', '');
+}
+
+function showSection(id) {
+	showSectionNoLoad(id);
 
 	if (gAuthenticated) {
 		if (id == "content_news") {
@@ -132,15 +140,16 @@ function showSection(id) {
 	}
 }
 
-function newsSubMenu(section) {
-	if (gNewsToLoad != section) {
-		gNewsToLoad = section;
-		showSection('content_news');
-	} else {
-		loadNews();
-	}
+function newsSubMenuNoLoad(section) {
+	gNewsToLoad = section;
 	$(".subMenu").removeClass("selected");
 	$("#submenu_news_" + section).addClass("selected");
+	showSectionNoLoad('content_news');
+}
+
+function newsSubMenu(section) {
+	newsSubMenuNoLoad(section);
+	loadNews();
 }
 
 function makeSubscriptionNodes(subscription, indent) {
