@@ -197,7 +197,7 @@ class Application(object):
 		openidUrl = form.getvalue('openid_identifier')
 		oid = request.consumer()
 		oidRequest = oid.begin(openidUrl)
-		returnTo = os.path.join(request.indexUrl(), 'process')
+		returnTo = realm + '/process'
 		if oidRequest.shouldSendRedirect():
 			redirectUrl = oidRequest.redirectURL(realm, returnTo, immediate=False)
 			return self.redirect(request, redirectUrl)
@@ -217,7 +217,7 @@ class Application(object):
 		for key in form:
 			fields[key] = form.getvalue(key)
 		oid = request.consumer()
-		info = oid.complete(fields, os.path.join(request.indexUrl(), 'process'))
+		info = oid.complete(fields, realm + '/process')
 
 		if info.status == consumer.FAILURE and info.getDisplayIdentifier():
 			raise RuntimeError('Verification of %s failed: %s' % (cgi.escape(info.getDisplayIdentifier()), info.message))
