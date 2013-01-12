@@ -99,6 +99,17 @@ class FeedCache(object):
 			self._db.commit()
 		return {'lastAttempt': lastAttempt, 'lastUpdate': lastUpdate}
 
+def generateFeedOutline(parent, subscriptions, parentSubscription=None):
+	for subscription in subscriptions:
+		if subscription['parent'] == parentSubscription:
+			attribs = {'title': subscription['name'], 'text': subscription['name']}
+			if subscription['url']:
+				attribs['xmlUrl'] = subscription['url']
+				attribs['htmlUrl'] = subscription['url']
+				subscription['type'] = 'rss'
+			outline = ET.SubElement(parent, 'outline', attribs)
+			generateFeedOutline(outline, subscriptions, subscription['id'])
+
 class Request(object):
 	SESSION_COOKIE_NAME = 'sessionId' 
 
@@ -820,6 +831,32 @@ class Application(object):
 		cursor.close()
 		request.db().commit()
 		return self.redirect(request, request.environment['SCRIPT_NAME'])
+
+	def handle_saveOpml(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+
+		cursor = request.db().cursor()
+		cursor.execute('SELECT id, name, url, parent FROM subscriptions WHERE user=%s', (request.session['userId'],))
+		columnNames = [d[0] for d in cursor.description]
+		subscriptions = [dict(zip(columnNames, row)) for row in cursor]
+		ids = [subscription['id'] for subscription in subscriptions]
+		for subscription in subscriptions:
+			if not subscription['parent'] in ids:
+				subscription['parent'] = None
+		cursor.close()
+		root = ET.Element('opml', {'version': '1.0'})
+		head = ET.SubElement(root, 'head')
+		title = ET.SubElement(head, 'title')
+		title.text = 'News Friends Subscriptions for ' + (request.session['username'] or 'Anonymous')
+		body = ET.SubElement(root, 'body')
+		generateFeedOutline(body, subscriptions)
+		result = ET.tostring(root, 'utf-8')
+		request.startResponse('200 OK', [
+			('Content-Type', 'application/xml; charset=utf-8'),
+			('Content-Length', str(len(result))),
+		])
+		return [result]
 
 	def handleError(self, request):
 		return self.render(request, 'index.html')
