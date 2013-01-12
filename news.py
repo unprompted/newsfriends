@@ -71,7 +71,24 @@ class FeedCache(object):
 				lastAttempt = now
 				try:
 					headers = {'User-Agent': userAgent}
-					document = unicode(urllib2.urlopen(urllib2.Request(url, None, headers), timeout=15).read(), 'utf-8')
+					response = urllib2.urlopen(urllib2.Request(url, None, headers), timeout=15)
+					encoding = None
+					if 'Content-Type' in response.headers:
+						contentType = response.headers['Content-Type']
+						if 'charset=' in contentType:
+							encoding = contentType.split('charset=')[-1]
+					stringData = response.read()
+
+					# If the HTTP response didn't include
+					# an encoding, let ElementTree parse
+					# the document and give it back in a
+					# known encoding.
+					if not encoding:
+						tree = ET.fromstring(stringData)
+						encoding = 'utf-8'
+						stringData = ET.tostring(tree, encoding)
+
+					document = unicode(stringData, encoding)
 					error = None
 					lastUpdate = now
 				except Exception, e:
@@ -462,6 +479,8 @@ class Application(object):
 				entryId = entry.id if 'id' in entry else None
 				entryLink = entry.link if 'link' in entry else None
 				entryId = entryId or entryLink
+				if len(entryId) > 255:
+					entryId = hashlib.md5(entryId).hexdigest()
 				if entryId:
 					if 'title_detail' in entry:
 						entryTitle = makeHtml(entry.title_detail)
