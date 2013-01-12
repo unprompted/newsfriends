@@ -598,7 +598,7 @@ function makeArticleNode(article) {
 	}
 	var subjectDiv = document.createElement('span');
 	$(subjectDiv).addClass("title");
-	$(subjectDiv).text(article.title);
+	$(subjectDiv).html(article.title);
 	$(headingDiv).append(subjectDiv);
 	var index = $("#articles").children().length;
 	$(headingDiv).click(function() {
