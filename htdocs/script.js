@@ -152,6 +152,54 @@ function newsSubMenu(section) {
 	loadNews();
 }
 
+function makeEditableNode(node, getValue, setValue, callback) {
+	$(node).click(function() {
+		if (!$(node).data('original')) {
+			var original = getValue(node);
+			$(node).data('original', original);
+			$(node).empty();
+			var input = document.createElement('textarea');
+			$(input).css({width: '100%', margin: '0', padding: '0'});
+			$(input).val(original);
+			$(node).append(input);
+
+			function finishEdit() {
+				var newValue = $(input).val();
+				$(node).empty();
+				$(node).data('original', null);
+				setValue(node, newValue);
+			}
+
+			function cancelEdit() {
+				var originalValue = $(node).data('original');
+				$(node).empty();
+				$(node).data('original', null);
+				setValue(node, originalValue);
+			}
+
+			function startEdit() {
+				$(input).attr('disabled', 'disabled');
+				callback($(input).val(), finishEdit, cancelEdit);
+			}
+
+			$(input).keydown(function(event) {
+				if (event.keyCode == 27) {
+					// escape
+					cancelEdit();
+				} else if (event.keyCode == 13) {
+					// enter
+					startEdit();
+				}
+			});
+			$(input).blur(function() {
+				cancelEdit();
+			});
+
+			$(input).focus();
+		}
+	});
+}
+
 function makeSubscriptionNodes(subscription, indent) {
 	var nodes = [];
 
@@ -160,16 +208,65 @@ function makeSubscriptionNodes(subscription, indent) {
 		var td = document.createElement('td');
 		$(td).text(subscription.name || "Unnamed");
 		$(td).css('padding-left', (indent * 2) + 'em');
+		function getName(node) {
+			return $(node).text();
+		}
+		function setName(node, value) {
+			$(node).text(value);
+		}
+		makeEditableNode(td,
+			getName,
+			setName,
+			function(newValue, editSuccess, editFail) {
+			$.ajax({
+				type: "POST",
+				url: "updateSubscription",
+				data: { id: subscription.id, name: newValue },
+				dataType: 'json',
+			}).done(function(data) {
+				updateError(data);
+				if (data.affectedRows > 0) {
+					editSuccess();
+				} else {
+					editFail();
+				}
+			}).fail(function() {
+				editFail();
+			});
+		});
 		$(tr).append(td);
 
 		td = document.createElement('td');
-		if (subscription.feedUrl) {
-			var a = document.createElement('a');
-			$(a).attr('href', subscription.feedUrl);
-			$(a).text(subscription.feedUrl);
-			$(td).css('max-width', '5%');
-			$(td).append(a);
+		function getUrl(node) {
+			return $(node).children().first().text();
 		}
+		function setUrl(node, url) {
+			if (url) {
+				var a = document.createElement('a');
+				$(a).attr('href', url);
+				$(a).text(url);
+				$(node).css('max-width', '5%');
+				$(node).append(a);
+			}
+		}
+		setUrl(td, subscription.feedUrl);
+		makeEditableNode(td, getUrl, setUrl, function(newValue, editSuccess, editFail) {
+			$.ajax({
+				type: "POST",
+				url: "updateSubscription",
+				data: { id: subscription.id, url: newValue },
+				dataType: 'json',
+			}).done(function(data) {
+				updateError(data);
+				if (data.affectedRows > 0) {
+					editSuccess();
+				} else {
+					editFail();
+				}
+			}).fail(function() {
+				editFail();
+			});
+		});
 		$(tr).append(td);
 
 		td = document.createElement('td');
@@ -192,7 +289,7 @@ function makeSubscriptionNodes(subscription, indent) {
 				$.ajax({
 					type: "POST",
 					url: "updateSubscription",
-					data: { subscription: subscription.feedUrl, url: subscription.recommendedUrl },
+					data: { id: subscription.id, url: subscription.recommendedUrl },
 					dataType: 'json',
 				}).done(function(data) {
 					updateError(data);
@@ -211,7 +308,7 @@ function makeSubscriptionNodes(subscription, indent) {
 			$.ajax({
 				type: "POST",
 				url: "deleteSubscription",
-				data: { feedUrl: subscription.feedUrl },
+				data: { id: subscription.id },
 				dataType: 'json',
 			}).done(function(data) {
 				updateError(data);

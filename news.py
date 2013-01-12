@@ -316,15 +316,15 @@ class Application(object):
 
 	@json
 	def handle_deleteSubscription(self, request):
-		form = request.form()
-		feedUrl = form.getvalue('feedUrl')
 		if not 'userId' in request.session:
 			raise RuntimeError('Must be logged in.')
-		if not feedUrl:
-			raise RuntimeError('Missing feed URL.')
+		form = request.form()
+		feed = form.getvalue('id')
+		if not feed:
+			raise RuntimeError('Missing feed id.')
 		result = {}
 		cursor = request.db().cursor()
-		cursor.execute('DELETE FROM subscriptions WHERE user=%s AND url=%s', (request.session['userId'], feedUrl))
+		cursor.execute('DELETE FROM subscriptions WHERE user=%s AND id=%s', (request.session['userId'], feed))
 		result['affectedRows'] = cursor.rowcount
 		cursor.close()
 		request.db().commit()
@@ -335,11 +335,11 @@ class Application(object):
 		if not 'userId' in request.session:
 			raise RuntimeError('Must be logged in.')
 		form = request.form()
-		subscription = form.getvalue('subscription')
+		subscription = form.getvalue('id')
 		if not subscription:
-			raise RuntimeError('Missing subscription.')
+			raise RuntimeError('Missing id.')
 		keys = form.keys()
-		keys.remove('subscription')
+		keys.remove('id')
 		allowedKeys = ('name', 'url')
 		for key in keys:
 			if not key in allowedKeys:
@@ -352,7 +352,7 @@ class Application(object):
 			values.append(None)
 		cursor = request.db().cursor()
 		cursor.execute(
-			'UPDATE subscriptions SET %s WHERE user=%%s AND url=%%s' % ', '.join('%s=%%s' % (key,) for key in keys),
+			'UPDATE subscriptions SET %s WHERE user=%%s AND id=%%s' % ', '.join('%s=%%s' % (key,) for key in keys),
 			values + [request.session['userId'], subscription])
 		rows = cursor.rowcount
 		cursor.close()
