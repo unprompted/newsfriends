@@ -478,13 +478,14 @@ class Application(object):
 				originalFeedTitle = makeHtml(feed.feed.title_detail)
 				index = 0
 				feedTitle = originalFeedTitle
-				while True:
-					try:
-						cursor.execute('UPDATE subscriptions SET name=%s WHERE url=%s AND name IS NULL', (feedTitle, feedUrl))
-						break
-					except IntegrityError:
-						index += 1
-						feedTitle = '%s (%d)' % (originalFeedTitle, index)
+				if feedTitle:
+					while True:
+						try:
+							cursor.execute('UPDATE subscriptions SET name=%s WHERE url=%s AND name IS NULL', (feedTitle, feedUrl))
+							break
+						except IntegrityError:
+							index += 1
+							feedTitle = '%s (%d)' % (originalFeedTitle, index)
 			for entry in feed.entries:
 				entryTitle = 'No Title'
 				entryId = entry.id if 'id' in entry else None
