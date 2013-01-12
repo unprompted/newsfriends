@@ -234,11 +234,13 @@ function makeSubscriptionNodes(subscription, indent) {
 
 function makeSubscriptionTreeNode(parent, subscription) {
 	var div = document.createElement('div');
-	$(div).text(subscription.name || subscription.feedUrl);
-	if (subscription.unreadCount > 0) {
-		$(div).text($(div).text() + " (" + subscription.unreadCount + ")");
-		$(div).addClass("unread");
-	}
+	var name = document.createElement('span');
+	$(name).text(subscription.name || subscription.feedUrl);
+	$(name).addClass("name");
+	$(div).append(name);
+	var count = document.createElement('span');
+	$(count).addClass("count");
+	$(div).append(count);
 	var children = [];
 	gSubscriptions.forEach(function(other) {
 		if (other.parent == subscription.id) {
@@ -250,6 +252,10 @@ function makeSubscriptionTreeNode(parent, subscription) {
 	children.forEach(function(child) {
 		totalUnreadCount += makeSubscriptionTreeNode(div, child);
 	});
+	if (totalUnreadCount > 0) {
+		$(count).text(' (' + totalUnreadCount + ')');
+		$(div).addClass("unread");
+	}
 	$(div).click(function(event) {
 		if ($(div).hasClass("selected")) {
 			$(".subscriptionTree div").removeClass("selected");
