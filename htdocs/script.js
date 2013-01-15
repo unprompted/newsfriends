@@ -842,7 +842,7 @@ function makeArticleNode(article) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'isRead': true},
+			data: {'feed': article.feed, 'article': article.id, 'share': article.share || -1, 'isRead': true},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -850,7 +850,7 @@ function makeArticleNode(article) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'starred': !article.starred},
+			data: {'feed': article.feed, 'article': article.id, 'share': article.share || -1, 'starred': !article.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -858,7 +858,7 @@ function makeArticleNode(article) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'isRead': !article.isRead},
+			data: {'feed': article.feed, 'article': article.id, 'share': article.share || -1, 'isRead': !article.isRead},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -866,7 +866,7 @@ function makeArticleNode(article) {
 		$.ajax({
 			type: "POST",
 			url: "setStatus",
-			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'starred': !article.starred},
+			data: {'feed': article.feed, 'article': article.id, 'share': article.share || -1, 'starred': !article.starred},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
@@ -874,7 +874,7 @@ function makeArticleNode(article) {
 		$.ajax({
 			type: "POST",
 			url: "setShared",
-			data: {'feed': article.feed, 'article': article.id, 'share': article.shared ? -1 : article.share, 'share': !article.shared, 'note': $(shareNote).val()},
+			data: {'feed': article.feed, 'article': article.id, 'share': !article.shared, 'note': $(shareNote).val()},
 			dataType: 'json',
 		}).done(entryUpdated);
 	});
