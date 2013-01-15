@@ -491,9 +491,9 @@ class Application(object):
 				entryId = entry.id if 'id' in entry else None
 				entryLink = entry.link if 'link' in entry else None
 				entryId = entryId or entryLink
-				if len(entryId) > 255:
-					entryId = hashlib.md5(entryId).hexdigest()
 				if entryId:
+					if len(entryId) > 255:
+						entryId = hashlib.md5(entryId).hexdigest()
 					if 'title_detail' in entry:
 						entryTitle = makeHtml(entry.title_detail)
 					if 'content' in entry and entry.content:
