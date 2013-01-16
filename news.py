@@ -17,7 +17,7 @@ import urllib2
 import datetime
 import feedparser
 import time
-from lxml.etree import ElementTree as ET
+import lxml.etree
 from lxml.html.clean import Cleaner
 import base64
 import StringIO
@@ -88,9 +88,9 @@ class FeedCache(object):
 					# the document and give it back in a
 					# known encoding.
 					if not encoding:
-						tree = ET.fromstring(stringData)
+						tree = lxml.etree.fromstring(stringData)
 						encoding = 'utf-8'
-						stringData = ET.tostring(tree, encoding)
+						stringData = lxml.etree.tostring(tree, encoding=encoding)
 
 					document = unicode(stringData, encoding)
 					error = None
@@ -111,7 +111,7 @@ def generateFeedOutline(parent, subscriptions, parentSubscription=None):
 				attribs['xmlUrl'] = subscription['url']
 				attribs['htmlUrl'] = subscription['url']
 				subscription['type'] = 'rss'
-			outline = ET.SubElement(parent, 'outline', attribs)
+			outline = lxml.etree.SubElement(parent, 'outline', attribs)
 			generateFeedOutline(outline, subscriptions, subscription['id'])
 
 class Request(object):
@@ -470,7 +470,10 @@ class Application(object):
 			if detail.type == 'text/plain':
 				return cgi.escape(detail.value)
 			elif detail.type == 'text/html' or detail.type == 'application/xhtml+xml':
-				return cleaner.clean_html(detail.value)
+				if detail.value:
+					return cleaner.clean_html(detail.value)
+				else:
+					return u''
 			else:
 				return cgi.escape(detail.value)
 
@@ -518,6 +521,8 @@ class Application(object):
 						break
 				if recommendedUrl:
 					cursor.execute('UPDATE subscriptions SET recommendedUrl=%s WHERE url=%s', (recommendedUrl, feedUrl))
+		except Exception, e:
+			cursor.execute('UPDATE feeds SET error=%s WHERE url=%s', (str(e), feedUrl))
 		finally:
 			cursor.close()
 			request.db().commit()
@@ -830,7 +835,7 @@ class Application(object):
 
 		form = request.form()
 		opml = form['file'].file
-		tree = ET.parse(opml)
+		tree = lxml.etree.parse(opml)
 		body = tree.getroot().find('body')
 		for node in body.getchildren():
 			importNode(node)
@@ -851,13 +856,13 @@ class Application(object):
 			if not subscription['parent'] in ids:
 				subscription['parent'] = None
 		cursor.close()
-		root = ET.Element('opml', {'version': '1.0'})
-		head = ET.SubElement(root, 'head')
-		title = ET.SubElement(head, 'title')
+		root = lxml.etree.Element('opml', {'version': '1.0'})
+		head = lxml.etree.SubElement(root, 'head')
+		title = lxml.etree.SubElement(head, 'title')
 		title.text = 'News Friends Subscriptions for ' + (request.session['username'] or 'Anonymous')
-		body = ET.SubElement(root, 'body')
+		body = lxml.etree.SubElement(root, 'body')
 		generateFeedOutline(body, subscriptions)
-		result = ET.tostring(root, 'utf-8')
+		result = lxml.etree.tostring(root, encoding='utf-8')
 		request.startResponse('200 OK', [
 			('Content-Type', 'application/xml; charset=utf-8'),
 			('Content-Length', str(len(result))),
