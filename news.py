@@ -17,12 +17,16 @@ import urllib2
 import datetime
 import feedparser
 import time
-from xml.etree import ElementTree as ET
+from lxml.etree import ElementTree as ET
+from lxml.html.clean import Cleaner
 import base64
 import StringIO
 import sys
 import hashlib
 import urlparse
+
+feedparser.SANITIZE_HTML = False
+cleaner = Cleaner(host_whitelist=['www.youtube.com'])
 
 dbArgs = {'user': 'news', 'passwd': 'news', 'db': 'news'}
 userAgent = 'UnpromptedNews/1.0'
@@ -466,7 +470,7 @@ class Application(object):
 			if detail.type == 'text/plain':
 				return cgi.escape(detail.value)
 			elif detail.type == 'text/html' or detail.type == 'application/xhtml+xml':
-				return detail.value
+				return cleaner.clean_html(detail.value)
 			else:
 				return cgi.escape(detail.value)
 
