@@ -582,22 +582,50 @@ class Application(object):
 					articles.published AS published,
 					statuses.isRead AS isRead,
 					statuses.starred AS starred,
-					shares.id IS NOT NULL AS shared,
-					shares.id AS share,
+					FALSE AS shared,
+					NULL AS share,
 					NULL AS sharedBy,
 					NULL AS sharedNote
 				FROM subscriptions
 				JOIN articles ON subscriptions.url=articles.feed
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=-1
-				LEFT OUTER JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
 				WHERE (subscriptions.user=%s) AND (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
 				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
-				[request.session['userId']] * 3 + feeds + [resultLimit + 1])
+				[request.session['userId']] * 2 + feeds + [resultLimit + 1])
 			times['unread'] += time.time()
 
 			columnNames = [d[0] for d in cursor.description]
 			unreadItems = [dict(zip(columnNames, row)) for row in cursor]
+
+			times['sharedByMe'] = -time.time()
+			cursor.execute('''
+				SELECT
+					articles.id AS id,
+					articles.feed AS feed,
+					subscriptions.name AS feedName,
+					articles.title AS title,
+					articles.summary AS summary,
+					articles.link AS link,
+					articles.published AS published,
+					statuses.isRead AS isRead,
+					statuses.starred AS starred,
+					TRUE AS shared,
+					shares.id AS share,
+					users.username AS sharedBy,
+					shares.note AS sharedNote
+				FROM subscriptions
+				JOIN articles ON subscriptions.url=articles.feed
+				JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
+				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
+				LEFT OUTER JOIN users ON users.id=shares.user
+				WHERE (subscriptions.user=%s) AND (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
+				ORDER BY starred DESC, articles.published DESC LIMIT %s
+				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
+				[request.session['userId']] * 3 + feeds + [resultLimit + 1])
+			times['sharedByMe'] += time.time()
+			columnNames = [d[0] for d in cursor.description]
+			sharedByMe = [dict(zip(columnNames, row)) for row in cursor]
 
 			times['sharedWithMe'] = -time.time()
 			cursor.execute('''
@@ -626,24 +654,27 @@ class Application(object):
 				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
 				[request.session['userId']] * 2 + feeds + [resultLimit + 1])
 			columnNames = [d[0] for d in cursor.description]
-			sharedItems = [dict(zip(columnNames, row)) for row in cursor]
+			sharedWithMe = [dict(zip(columnNames, row)) for row in cursor]
 			times['sharedWithMe'] += time.time()
 
 			# Sort items so that starred items come first and then
 			# everything is sorted by date after that.
-			allItems = []
-			while unreadItems and sharedItems:
-				if unreadItems[0]['starred'] != sharedItems[0]['starred']:
-					if unreadItems[0]['starred']:
-						allItems.append(unreadItems.pop(0))
+			def mergeNews(left, right):
+				allItems = []
+				while left and right:
+					if left[0]['starred'] != right[0]['starred']:
+						if left[0]['starred']:
+							allItems.append(left.pop(0))
+						else:
+							allItems.append(right.pop(0))
+					elif left[0]['published'] >= right[0]['published']:
+						allItems.append(left.pop(0))
 					else:
-						allItems.append(sharedItems.pop(0))
-				elif unreadItems[0]['published'] >= sharedItems[0]['published']:
-					allItems.append(unreadItems.pop(0))
-				else:
-					allItems.append(sharedItems.pop(0))
-			allItems += unreadItems
-			allItems += sharedItems
+						allItems.append(right.pop(0))
+				allItems += left
+				allItems += right
+				return allItems
+			allItems = mergeNews(mergeNews(unreadItems, sharedByMe), sharedWithMe)
 		elif what == 'shared':
 			times['shared'] = -time.time()
 			cursor.execute('''
