@@ -693,6 +693,19 @@ function makeArticleNode(article) {
 		$(publishedSpan).text(new Date(article.published * 1000).toLocaleString());
 		$(headingDiv).append(publishedSpan);
 	}
+	if (article.share) {
+		if (article.sharedBy) {
+			var sharedBy = document.createElement('span');
+			$(sharedBy).addClass("sharedBy");
+			$(sharedBy).text(article.sharedBy);
+			$(headingDiv).append(sharedBy);
+		} else {
+			var sharedBy = document.createElement('span');
+			$(sharedBy).addClass("sharedBy");
+			$(sharedBy).html("<i>Anonymous</i>");
+			$(headingDiv).append(sharedBy);
+		}
+	}
 	var subjectDiv = document.createElement('span');
 	$(subjectDiv).addClass("title");
 	$(subjectDiv).html(article.title);

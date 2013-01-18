@@ -136,6 +136,19 @@ table.wide td,th {
 	cursor: pointer;
 }
 
+.article .heading .sharedBy {
+	min-height: 24px;
+	float: left;
+	color: #888;
+	border: 1px solid black;
+	width: auto;
+	padding-left: 2px;
+	padding-right: 2px;
+	margin-left: 2px;
+	margin-right: 2px;
+	background-color: #ff8;
+}
+
 .article .heading .feedName {
 	min-height: 24px;
 	float: left;
