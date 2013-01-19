@@ -614,12 +614,12 @@ class Application(object):
 					shares.id AS share,
 					users.username AS sharedBy,
 					shares.note AS sharedNote
-				FROM subscriptions
-				JOIN articles ON subscriptions.url=articles.feed
+				FROM articles
 				JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
+				LEFT OUTER JOIN subscriptions ON subscriptions.user=%s AND subscriptions.url=articles.feed
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
 				LEFT OUTER JOIN users ON users.id=shares.user
-				WHERE (subscriptions.user=%s) AND (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
+				WHERE (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
 				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
 				[request.session['userId']] * 3 + feeds + [resultLimit + 1])
@@ -693,8 +693,8 @@ class Application(object):
 					users.username AS sharedBy,
 					shares.note AS sharedNote
 				FROM articles
-				JOIN subscriptions ON subscriptions.url=articles.feed AND subscriptions.user=%s
 				JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
+				LEFT OUTER JOIN subscriptions ON subscriptions.url=articles.feed AND subscriptions.user=%s
 				JOIN users ON users.id=%s
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
@@ -782,11 +782,7 @@ class Application(object):
 			raise RuntimeError('Must be logged in.')
 		form = request.form()
 		articleId = form.getvalue('article')
-		if not articleId:
-			raise RuntimeError('Missing article.')
-		feedUrl = form.getvalue('feed')
-		if not feedUrl:
-			raise RuntimeError('Missing feed.')
+		feedUrl = form.getvalue('feed', '')
 		shareId = form.getvalue('share') or -1
 		cursor = request.db().cursor()
 		cursor.execute('SELECT isRead, starred FROM statuses WHERE feed=%s AND article=%s AND share=%s AND user=%s', (feedUrl, articleId, shareId, request.session['userId']))
@@ -900,6 +896,58 @@ class Application(object):
 		])
 		return [result]
 
+	def handle_share(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		form = request.form()
+		url = form.getvalue('url')
+		title = form.getvalue('title')
+		try:
+			headers = {'User-Agent': userAgent}
+			response = urllib2.urlopen(urllib2.Request(url, None, headers), timeout=15)
+			encoding = None
+			if 'Content-Type' in response.headers:
+				contentType = response.headers['Content-Type']
+				if 'charset=' in contentType:
+					encoding = contentType.split('charset=')[-1]
+			stringData = response.read()
+
+			# If the HTTP response didn't include
+			# an encoding, let ElementTree parse
+			# the document and give it back in a
+			# known encoding.
+			if not encoding:
+				tree = lxml.etree.fromstring(stringData)
+				encoding = 'utf-8'
+				stringData = lxml.etree.tostring(tree, encoding=encoding)
+
+			content = unicode(stringData, encoding)
+			content = cleaner.clean_html(content)
+		except Exception, e:
+			content = str(e)
+		request.data['url'] = url
+		request.data['title'] = title
+		request.data['content'] = content
+		return self.render(request, 'share.html')
+
+	def handle_postShare(self, request):
+		if not 'userId' in request.session:
+			raise RuntimeError('Must be logged in.')
+		form = request.form()
+		url = form.getvalue('url')
+		title = form.getvalue('title')
+		content = form.getvalue('content')
+		note = form.getvalue('note')
+		cursor = request.db().cursor()
+		cursor.execute('INSERT INTO articles (id, feed, title, summary, link, published) VALUES (%s, %s, %s, %s, %s, %s)',
+			(url, '', title, content, url, datetime.datetime.now()))
+		cursor.execute('INSERT INTO shares (article, feed, user, note) VALUES (%s, %s, %s, %s)',
+			(url, '', request.session['userId'], note))
+		cursor.close()
+		request.db().commit()
+		request.data['shared'] = True
+		return self.render(request, 'share.html')
+
 	def handleError(self, request):
 		return self.render(request, 'index.html')
 
@@ -916,6 +964,7 @@ class Application(object):
 	def render(self, request, template, response='200 OK'):
 		request.data['session'] = request.session
 		request.data['environment'] = request.environment
+		request.data['baseUrl'] = realm
 		request.saveSession()
 		stream = self._loader.load(template).generate(**request.data)
 		result = stream.render('html', doctype='html')

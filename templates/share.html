@@ -1,0 +1,29 @@
+<html
+	xmlns="http://www.w3.org/1999/xhtml"
+	xmlns:py="http://genshi.edgewall.org/">
+	<?python from genshi.core import Markup ?>
+	<head>
+		<title>News Friends</title>
+		<base href="${environment.SCRIPT_NAME}/"/>
+		<link type="text/css" rel="stylesheet" href="static/style.css" />
+		<script type="text/javascript" src="static/jquery.min.js"></script>
+		<script type="text/javascript" src="static/script.js"></script>
+	</head>
+	<body>
+		<div py:if="defined('error')">${error}</div>
+		<div py:if="defined('shared')">Shared successfully.</div>
+		<div py:if="not defined('shared')">
+			<div id="heading">Share with News Friends</div>
+			<form method="POST" action="postShare">
+				<div style="title"><a href="${url}">${title}</a></div>
+				<h2>Note:</h2>
+				<input type="hidden" name="title" value="${title}"/>
+				<input type="hidden" name="url" value="${url}"/>
+				<input type="hidden" name="content" value="${content}"/>
+				<textarea name="note" style="width: 80%"></textarea>
+				<input type="submit" name="submit" value="Share"/>
+			</form>
+			<div style="border: 4px solid black; overflow: hidden">${Markup(content)}</div>
+		</div>
+	</body>
+</html>
