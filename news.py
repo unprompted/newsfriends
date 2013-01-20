@@ -512,6 +512,8 @@ class Application(object):
 					entryPublished = None
 					if 'published_parsed' in entry and entry.published_parsed:
 						entryPublished = datetime.datetime.fromtimestamp(time.mktime(entry.published_parsed))
+					elif 'updated_parsed' in entry and entry.updated_parsed:
+						entryPublished = datetime.datetime.fromtimestamp(time.mktime(entry.updated_parsed))
 					cursor.execute('REPLACE INTO articles (id, feed, title, summary, link, published) VALUES (%s, %s, %s, %s, %s, %s)', (entryId, feedUrl, entryTitle, entrySummary, entryLink, entryPublished))
 			if not feed.entries and 'html' in feed.feed and 'links' in feed.feed:
 				recommendedUrl = None
