@@ -689,7 +689,7 @@ class Application(object):
 					articles.link AS link,
 					articles.published AS published,
 					statuses.isRead AS isRead,
-					statuses.starred AS starred,
+					IFNULL(statuses.starred, FALSE) AS starred,
 					TRUE AS shared,
 					shares.id AS share,
 					users.username AS sharedBy,
