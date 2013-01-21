@@ -406,6 +406,9 @@ function makeSubscriptionTreeNode(parent, subscription) {
 	if (gSelectedSubscription != null && subscription.id == gSelectedSubscription.id) {
 		$(div).addClass("selected");
 		gSelectedSubscription = subscription;
+		if (totalUnreadCount == 0 && gShowOnlyUnreadSubscriptions) {
+			gSelectedSubscription = null;
+		}
 	}
 
 	if (!gShowOnlyUnreadSubscriptions || totalUnreadCount > 0) {
