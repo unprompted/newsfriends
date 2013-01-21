@@ -45,6 +45,13 @@ def jsonDefaultHandler(obj):
 	else:
 		raise TypeError, 'Object of type %s with value of %s is not JSON serializable' % (type(obj), repr(obj))
 
+def cleanHtml(html):
+	result = cleaner.clean_html(html)
+	tree = lxml.etree.HTML(result)
+	for node in tree.findall('.//a'):
+		node.attrib['target'] = '_blank'
+	return lxml.etree.tostring(tree, encoding='utf-8')
+
 class FeedCache(object):
 	def __init__(self, db):
 		self._db = db
@@ -471,7 +478,7 @@ class Application(object):
 				return cgi.escape(detail.value)
 			elif detail.type == 'text/html' or detail.type == 'application/xhtml+xml':
 				if detail.value:
-					return cleaner.clean_html(detail.value)
+					return cleanHtml(detail.value)
 				else:
 					return u''
 			else:
@@ -924,7 +931,7 @@ class Application(object):
 				stringData = lxml.etree.tostring(tree, encoding=encoding)
 
 			content = unicode(stringData, encoding)
-			content = cleaner.clean_html(content)
+			content = cleanHtml(content)
 		except Exception, e:
 			content = str(e)
 		request.data['url'] = url
