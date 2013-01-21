@@ -544,7 +544,7 @@ class Application(object):
 		cursor = request.db().cursor()
 		cursor.execute('''
 			REPLACE INTO statuses (feed, article, user, share, isRead, starred)
-			SELECT articles.feed, articles.id, %s, -1, TRUE, statuses.starred
+			SELECT articles.feed, articles.id, %s, -1, TRUE, IFNULL(statuses.starred, FALSE)
 			FROM subscriptions, articles
 			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id
 			WHERE (subscriptions.user=%s AND subscriptions.url=articles.feed) AND (NOT statuses.isRead OR statuses.isRead IS NULL)
@@ -589,8 +589,8 @@ class Application(object):
 					articles.summary AS summary,
 					articles.link AS link,
 					articles.published AS published,
-					statuses.isRead AS isRead,
-					statuses.starred AS starred,
+					IFNULL(statuses.isRead, FALSE) AS isRead,
+					IFNULL(statuses.starred, FALSE) AS starred,
 					FALSE AS shared,
 					NULL AS share,
 					NULL AS sharedBy,
@@ -598,7 +598,7 @@ class Application(object):
 				FROM subscriptions
 				JOIN articles ON subscriptions.url=articles.feed
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=-1
-				WHERE (subscriptions.user=%s) AND (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
+				WHERE (subscriptions.user=%s) AND (__CONDITION__ OR starred) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
 				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
 				[request.session['userId']] * 2 + feeds + [resultLimit + 1])
@@ -617,8 +617,8 @@ class Application(object):
 					articles.summary AS summary,
 					articles.link AS link,
 					articles.published AS published,
-					statuses.isRead AS isRead,
-					statuses.starred AS starred,
+					IFNULL(statuses.isRead, FALSE) AS isRead,
+					IFNULL(statuses.starred, FALSE) AS starred,
 					TRUE AS shared,
 					shares.id AS share,
 					users.username AS sharedBy,
@@ -628,7 +628,7 @@ class Application(object):
 				LEFT OUTER JOIN subscriptions ON subscriptions.user=%s AND subscriptions.url=articles.feed
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
 				LEFT OUTER JOIN users ON users.id=shares.user
-				WHERE (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
+				WHERE (__CONDITION__ OR starred) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
 				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
 				[request.session['userId']] * 3 + feeds + [resultLimit + 1])
@@ -646,8 +646,8 @@ class Application(object):
 					articles.summary AS summary,
 					articles.link AS link,
 					articles.published AS published,
-					statuses.isRead AS isRead,
-					statuses.starred AS starred,
+					IFNULL(statuses.isRead, FALSE) AS isRead,
+					IFNULL(statuses.starred, FALSE) AS starred,
 					FALSE AS shared,
 					shares.id AS share,
 					users.username AS sharedBy,
@@ -658,7 +658,7 @@ class Application(object):
 				JOIN users ON users.id=shares.user
 				JOIN subscriptions ON subscriptions.url=shares.feed AND subscriptions.user=friends.friend
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
-				WHERE (__CONDITION__ OR statuses.starred) AND (__FEED_CONDITION__)
+				WHERE (__CONDITION__ OR starred) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
 				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
 				[request.session['userId']] * 2 + feeds + [resultLimit + 1])
@@ -695,7 +695,7 @@ class Application(object):
 					articles.summary AS summary,
 					articles.link AS link,
 					articles.published AS published,
-					statuses.isRead AS isRead,
+					IFNULL(statuses.isRead, FALSE) AS isRead,
 					IFNULL(statuses.starred, FALSE) AS starred,
 					TRUE AS shared,
 					shares.id AS share,
@@ -722,8 +722,8 @@ class Application(object):
 					articles.summary AS summary,
 					articles.link AS link,
 					articles.published AS published,
-					statuses.isRead AS isRead,
-					statuses.starred AS starred,
+					IFNULL(statuses.isRead, FALSE) AS isRead,
+					IFNULL(statuses.starred, FALSE) AS starred,
 					myShares.id IS NOT NULL AS shared,
 					shares.id AS share,
 					users.username AS sharedBy,
