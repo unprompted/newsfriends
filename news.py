@@ -397,6 +397,28 @@ class Application(object):
 				subscription['unreadCount'] = cursor.fetchone()[0]
 			else:
 				subscription['unreadCount'] = 0
+		result['unread'] = sum(subscription['unreadCount'] for subscription in result['subscriptions'])
+		cursor.execute('SELECT COUNT(*) FROM statuses WHERE statuses.user=%s AND statuses.starred', (request.session['userId'],))
+		result['starred'] = cursor.fetchone()[0]
+		cursor.execute('''
+			SELECT COUNT(*)
+			FROM articles
+			JOIN shares ON shares.user=%s AND shares.feed=articles.feed AND shares.article=articles.id
+			LEFT OUTER JOIN statuses ON statuses.user=shares.user AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
+			WHERE NOT IFNULL(statuses.isRead, FALSE)
+			''',
+			(request.session['userId'],))
+		result['shared'] = cursor.fetchone()[0]
+		cursor.execute('''
+			SELECT COUNT(*)
+			FROM shares
+			JOIN friends ON shares.user=friends.friend AND friends.user=%s
+			JOIN articles ON shares.feed=articles.feed AND shares.article=articles.id
+			LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
+			WHERE NOT IFNULL(statuses.isRead, FALSE)
+			''',
+			(request.session['userId'],) * 2)
+		result['friends'] = cursor.fetchone()[0]
 		cursor.close()
 		return self.json(request, result)
 
