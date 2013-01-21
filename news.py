@@ -946,6 +946,7 @@ class Application(object):
 		url = form.getvalue('url')
 		title = form.getvalue('title')
 		content = form.getvalue('content')
+		content = cleanHtml(content)
 		note = form.getvalue('note')
 		cursor = request.db().cursor()
 		cursor.execute('INSERT INTO articles (id, feed, title, summary, link, published) VALUES (%s, %s, %s, %s, %s, %s)',
