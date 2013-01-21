@@ -28,17 +28,8 @@ $(document).ready(function() {
 	}
 });
 
-function focusArticle(index) {
-	$("#articles").children().eq(gFocused).removeClass('focused');
-	gFocused = index;
-	if (gFocused >= 0 && gFocused < $("#articles").children().length) {
-		var toShow = $("#articles").children().eq(gFocused);
-		toShow.addClass('focused');
-		toShow.get(0).scrollIntoView(true);
-	}
-}
-
 function selectArticle(index, expand) {
+	gCursorIndex = index;
 	if (expand) {
 		$("#articles").children().eq(gFocused).removeClass('focused');
 		$("#articles").children().eq(gSelected).removeClass('selected');
@@ -107,7 +98,6 @@ $(document).keypress(function(event) {
 				$("#articles").children().eq(select).trigger('toggleStarred');
 			}
 
-			gCursorIndex = cursor;
 			selectArticle(cursor, expand);
 		}
 	}
