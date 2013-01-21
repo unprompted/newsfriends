@@ -690,6 +690,8 @@ function loadNews() {
 	}).done(function(data) {
 		updateError(data);
 		gNews = data;
+		gCursorIndex = -1;
+		gFocused = -1;
 		gSelected = -1;
 		$("#articles").empty();
 		$("#feed_message").hide();
