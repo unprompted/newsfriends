@@ -568,10 +568,12 @@ class Application(object):
 		cursor = request.db().cursor()
 		resultLimit = 100
 
-		if what in ('unread', 'all'):
+		if what in ('unread', 'all', 'starred'):
 			times['unread'] = -time.time()
 			if what == 'unread':
 				condition = 'NOT statuses.isRead OR statuses.isRead IS NULL'
+			elif what == 'starred':
+				condition = 'starred'
 			else:
 				condition = 'TRUE'
 			if len(feeds) > 1:
@@ -598,7 +600,7 @@ class Application(object):
 				FROM subscriptions
 				JOIN articles ON subscriptions.url=articles.feed
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=-1
-				WHERE (subscriptions.user=%s) AND (__CONDITION__ OR starred) AND (__FEED_CONDITION__)
+				WHERE (subscriptions.user=%s) AND (__CONDITION__) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
 				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
 				[request.session['userId']] * 2 + feeds + [resultLimit + 1])
@@ -628,7 +630,7 @@ class Application(object):
 				LEFT OUTER JOIN subscriptions ON subscriptions.user=%s AND subscriptions.url=articles.feed
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
 				LEFT OUTER JOIN users ON users.id=shares.user
-				WHERE (__CONDITION__ OR starred) AND (__FEED_CONDITION__)
+				WHERE (__CONDITION__) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
 				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
 				[request.session['userId']] * 3 + feeds + [resultLimit + 1])
@@ -658,7 +660,7 @@ class Application(object):
 				JOIN users ON users.id=shares.user
 				JOIN subscriptions ON subscriptions.url=shares.feed AND subscriptions.user=friends.friend
 				LEFT OUTER JOIN statuses ON statuses.user=%s AND statuses.feed=articles.feed AND statuses.article=articles.id AND statuses.share=shares.id
-				WHERE (__CONDITION__ OR starred) AND (__FEED_CONDITION__)
+				WHERE (__CONDITION__) AND (__FEED_CONDITION__)
 				ORDER BY starred DESC, articles.published DESC LIMIT %s
 				'''.replace('__CONDITION__', condition).replace('__FEED_CONDITION__', feedCondition),
 				[request.session['userId']] * 2 + feeds + [resultLimit + 1])
